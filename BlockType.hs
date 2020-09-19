@@ -62,8 +62,6 @@ lazy_i2bs_unsized :: Integer -> LazyB.ByteString
 lazy_i2bs_unsized 0 = LazyB.singleton 0
 lazy_i2bs_unsized i = LazyB.reverse $ LazyB.unfoldr (\i' -> if i' <= 0 then Nothing else Just (fromIntegral i', i' `shiftR` 8)) i
 
-data CoinbaseTransaction = CoinbaseTransaction
-
 data Transaction = Transaction {
         blockHeight :: Integer,  -- included so that coinbase transactions to the same address hash differently
         inputs :: [Input],
