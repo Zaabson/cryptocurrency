@@ -91,10 +91,10 @@ validateBlockTransactions pool Block{transactions=txs, ..} = runState (validate 
 
 blocksPerHalving :: Integer
 blocksPerHalving = 100000
-                  
---- okkey , dumbas cents are indivisible
+-- Block number 2600000 is the first that doesn't mine new coins
+
 calculateBlockReward :: Integer -> Cent
-calculateBlockReward blockHeight = Cent $ floor(100000000 * (0.5 :: Double) ^ ceiling (fromIntegral blockHeight / fromIntegral blocksPerHalving))
+calculateBlockReward blockHeight = Cent $ floor(100000000 * (0.5 :: Double) ^ ceiling ((fromIntegral blockHeight + 1)/ fromIntegral blocksPerHalving))
 
 validateBlock :: UTXOPool -> Block -> Bool
 validateBlock pool Block{transactions=txs, coinbaseTransaction=coinbase, blockHeader=BlockHeader{..}} = validCoinbase
