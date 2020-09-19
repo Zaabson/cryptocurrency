@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, ScopedTypeVariables, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric, ScopedTypeVariables, GeneralizedNewtypeDeriving, RecordWildCards #-}
 
 module BlockType where
 
@@ -63,13 +63,20 @@ lazy_i2bs_unsized 0 = LazyB.singleton 0
 lazy_i2bs_unsized i = LazyB.reverse $ LazyB.unfoldr (\i' -> if i' <= 0 then Nothing else Just (fromIntegral i', i' `shiftR` 8)) i
 
 data Transaction = Transaction {
-        blockHeight :: Integer,  -- included so that coinbase transactions to the same address hash differently
         inputs :: [Input],
         outputs :: [Output]
     } deriving (Show, Generic)
 
 instance FromJSON Transaction
 instance ToJSON Transaction
+
+data Coinbase = Coinbase {
+    blockHeight :: Integer, -- included so that coinbase transactions to the same address hash differently
+    coinbaseOutputs :: [Output]
+    } deriving (Show, Generic)
+
+instance FromJSON Coinbase
+instance ToJSON Coinbase
 
 data Output = Output {
     outputDenomination :: Cent,
@@ -101,6 +108,7 @@ instance ToJSON BlockHeader
 
 data Block = Block {
     blockHeader :: BlockHeader,
+    coinbaseTransaction :: Coinbase,
     transactions :: [Transaction]
     } deriving (Show, Generic)
 
@@ -118,3 +126,6 @@ blockTimestamp = timestamp . blockHeader
 
 blockRootHash :: Block -> HashOf B.ByteString
 blockRootHash = rootHash . blockHeader
+
+blockHeightFromCoinbase :: Block -> Integer
+blockHeightFromCoinbase Block{coinbaseTransaction=c, ..} = blockHeight c

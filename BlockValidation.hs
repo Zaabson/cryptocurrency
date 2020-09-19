@@ -67,7 +67,7 @@ validTransaction pool tx = case mapM (`Map.lookup` pool) unspendRefs of
 -- valid block needs to have at least coinbase transaction.
 validateBlockTransactions' :: UTXOPool -> Block -> (UTXOPool, Bool)
 validateBlockTransactions' pool Block{transactions=[], ..} = (pool, False)
-validateBlockTransactions' pool Block{transactions=coinbase : txs, blockHeader=BlockHeader{..}} = foldl f (pool, True) txs
+validateBlockTransactions' pool Block{transactions=txs, ..} = foldl f (pool, True) txs
     where f (pool, bool) tx = (foldl (flip $ uncurry Map.insert) pool (kvpairs tx), bool && validTransaction pool tx)
           kvpairs tx = snd $ mapAccumL (\n o -> (n+1, ((shash256 tx, n), o))) 0 (outputs tx)
 
@@ -77,8 +77,7 @@ validateBlockTransactions' pool Block{transactions=coinbase : txs, blockHeader=B
 -- returns (True, UTXOPool updated by transactions in this block without coinbase) or (False, Junk)
 -- Note: Coinbase money cannot be created and spent in the same block, some number (to be specified later) of blocks needs to be waited
 validateBlockTransactions :: UTXOPool -> Block -> (Bool, UTXOPool)
-validateBlockTransactions pool Block{transactions=[], ..} = (False, pool)
-validateBlockTransactions pool Block{transactions=coinbase : txs, blockHeader=BlockHeader{..}} = runState (validate txs) pool
+validateBlockTransactions pool Block{transactions=txs, ..} = runState (validate txs) pool
     where validate :: [Transaction] -> State UTXOPool Bool
           validate [] = return True
           validate (tx : rest) = do pool <- get
@@ -98,5 +97,5 @@ calculateBlockReward :: Integer -> Cent
 calculateBlockReward blockHeight = Cent $ floor(100000000 * (0.5 :: Double) ^ ceiling (fromIntegral blockHeight / fromIntegral blocksPerHalving))
 
 validateBlock :: UTXOPool -> Block -> Bool
-validateBlock pool Block{transactions=coinbase : txs, blockHeader=BlockHeader{..}} = validCoinbase
-    where validCoinbase = sumMoney (concatMap outputs (coinbase : txs)) + 69 <= 420
+validateBlock pool Block{transactions=txs, coinbaseTransaction=coinbase, blockHeader=BlockHeader{..}} = validCoinbase
+    where validCoinbase = sumMoney (concatMap outputs txs) + 69 <= 420
