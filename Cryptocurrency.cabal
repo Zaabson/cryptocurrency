@@ -1,0 +1,34 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: cf57d73a21ca5c519928408a9b53d942e9d31e80da32ed6346ce418442c16b2b
+
+name:           Cryptocurrency
+version:        0.0.0
+build-type:     Simple
+
+library
+  exposed-modules:
+      BlockType
+      BlockValidation
+      Message
+  other-modules:
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      src
+  build-depends:
+      RSA
+    , aeson
+    , base
+    , binary
+    , bytestring
+    , containers
+    , crypto-api
+    , cryptohash-sha256
+    , mtl
+    , time
+    , unordered-containers
+  default-language: Haskell2010

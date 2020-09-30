@@ -1,0 +1,17 @@
+name: Cryptocurrency
+
+dependencies:
+- base
+- containers
+- unordered-containers
+- bytestring
+- binary
+- mtl
+- aeson
+- time
+- crypto-api
+- cryptohash-sha256
+- RSA
+
+library:
+  source-dirs: src
