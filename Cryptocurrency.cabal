@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cf57d73a21ca5c519928408a9b53d942e9d31e80da32ed6346ce418442c16b2b
+-- hash: 38f321d5ad2f771d4dea68ba15b7365c3f4504b94bba486d31bff1a7e3346a72
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -14,6 +14,7 @@ library
   exposed-modules:
       BlockType
       BlockValidation
+      Merkle
       Message
   other-modules:
       Paths_Cryptocurrency

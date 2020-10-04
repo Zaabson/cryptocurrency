@@ -1,13 +1,15 @@
 {-# LANGUAGE DeriveGeneric, ScopedTypeVariables, GeneralizedNewtypeDeriving, RecordWildCards #-}
 
-module BlockType where
+module BlockType (shash256, blockNonce, blockTimestamp, blockPreviousHash, blockRootHash, blockHeightFromCoinbase,
+                  Transaction(..), HashOf(..), Cent(..), Signature(..), 
+                  Input(..), Output(..), Block(..), Coinbase(..), TXID, BlockHeader(..)) where
 
 import GHC.Generics
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LazyB
 import Data.Bits (shiftL, shiftR)
 import qualified Data.Binary as Binary
-import Data.Aeson
+import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
 import Data.Time.Clock (UTCTime)
 import Crypto.Util (bs2i, i2bs_unsized)
 import qualified Crypto.Hash.SHA256 as SHA256
@@ -16,7 +18,7 @@ import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)
 
-newtype HashOf a = Hash {rawHash :: B.ByteString} deriving (Show, Generic)
+newtype HashOf a = Hash {getHash :: B.ByteString} deriving (Show, Generic)
 
 -- Serialization achieved by converting ByteString to Integer
 instance ToJSON (HashOf a) where 
@@ -100,7 +102,7 @@ data BlockHeader = BlockHeader {
         nonce :: Integer,
         previousHash :: HashOf BlockHeader,
         timestamp :: UTCTime,
-        rootHash :: HashOf B.ByteString  -- !!! temporary   
+        rootHash :: HashOf B.ByteString -- change to RawHash when cyclic imports is fixed
     } deriving (Show, Generic)
 
 instance FromJSON BlockHeader

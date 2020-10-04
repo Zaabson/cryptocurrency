@@ -47,7 +47,7 @@ createSignedInput tx utxid vout pubKey privKey = unsignedInput {signature=signat
     signature = Signature . LazyB.toStrict . RSA.sign privKey $ hashWithInput tx unsignedInput
 
 hashWithInput :: Transaction -> Input -> LazyB.ByteString
-hashWithInput tx inp = LazyB.fromStrict . rawHash $ shash256 (tx {inputs = [inp]})
+hashWithInput tx inp = LazyB.fromStrict . getHash $ shash256 (tx {inputs = [inp]})
 
 verifyInputSignatures :: Transaction -> Bool
 verifyInputSignatures tx = all rightSignature (inputs tx)
