@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 38f321d5ad2f771d4dea68ba15b7365c3f4504b94bba486d31bff1a7e3346a72
+-- hash: b2b59cb0b16210e8183425ae91c8d9050bd6655a92dd6e9287442dba7c216ecf
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -30,6 +30,30 @@ library
     , crypto-api
     , cryptohash-sha256
     , mtl
+    , time
+    , unordered-containers
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      test
+  build-depends:
+      Cryptocurrency
+    , QuickCheck
+    , RSA
+    , aeson
+    , base
+    , binary
+    , bytestring
+    , containers
+    , crypto-api
+    , cryptohash-sha256
+    , mtl
+    , parallel
     , time
     , unordered-containers
   default-language: Haskell2010
