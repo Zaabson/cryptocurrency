@@ -1,8 +1,6 @@
 {-# LANGUAGE DeriveGeneric, ScopedTypeVariables, GeneralizedNewtypeDeriving, RecordWildCards #-}
 
-module BlockType (shash256, blockNonce, blockTimestamp, blockPreviousHash, blockRootHash, blockHeightFromCoinbase,
-                  Transaction(..), HashOf(..), Cent(..), Signature(..), 
-                  Input(..), Output(..), Block(..), Coinbase(..), TXID, BlockHeader(..)) where
+module BlockType where
 
 import GHC.Generics
 import qualified Data.ByteString as B
@@ -12,26 +10,16 @@ import qualified Data.Binary as Binary
 import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
 import Data.Time.Clock (UTCTime)
 import Crypto.Util (bs2i, i2bs_unsized)
-import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves as the library was better documented
-
--- NOTE : it's better to keep strict Bytestrings as
---        fromStrict is O(1) and toStrict is O(n)
-
-newtype HashOf a = Hash {getHash :: B.ByteString} deriving (Show, Generic)
-
--- Serialization achieved by converting ByteString to Integer
-instance ToJSON (HashOf a) where 
-    toJSON (Hash b) = toJSON $ bs2i b
-instance FromJSON (HashOf a) where
-    parseJSON v = Hash . i2bs_unsized <$> parseJSON v
-
+import Hashing (HashOf, RawHash)
 
 newtype Cent = Cent Integer deriving (Show, Generic, Num, Ord, Eq)  -- currency unit
 
 instance FromJSON Cent
 instance ToJSON Cent
 
+type TXID = HashOf Transaction
+type PublicAddress = HashOf RSA.PublicKey
 
 newtype Signature = Signature B.ByteString deriving (Show, Generic)
 
@@ -48,14 +36,6 @@ instance ToJSON RSA.PublicKey where
 
 instance FromJSON RSA.PublicKey where
     parseJSON v = Binary.decode . lazy_i2bs_unsized <$> parseJSON v
-
-type TXID = HashOf Transaction
-type PublicAddress = HashOf RSA.PublicKey
-
--- serialize to ByteString using JSON serialization, 
--- calculate sha256 hash and convert to Integer for storing in JSON
-shash256 :: ToJSON a => a -> HashOf a
-shash256 = Hash . SHA256.hashlazy . encode
 
 -- from "crypto-api" Crypto.Util
 lazy_bs2i :: LazyB.ByteString -> Integer
@@ -102,7 +82,7 @@ data BlockHeader = BlockHeader {
         nonce :: Integer,
         previousHash :: HashOf BlockHeader,
         timestamp :: UTCTime,
-        rootHash :: HashOf B.ByteString -- change to RawHash when cyclic imports is fixed
+        rootHash :: RawHash
     } deriving (Show, Generic)
 
 instance FromJSON BlockHeader
@@ -128,7 +108,7 @@ blockPreviousHash = previousHash . blockHeader
 blockTimestamp :: Block -> UTCTime
 blockTimestamp = timestamp . blockHeader
 
-blockRootHash :: Block -> HashOf B.ByteString
+blockRootHash :: Block -> RawHash
 blockRootHash = rootHash . blockHeader
 
 blockHeightFromCoinbase :: Block -> Integer

@@ -11,6 +11,7 @@ import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.Map as Map
 import qualified Codec.Crypto.RSA as RSA
 import BlockType
+import Hashing (HashOf(..), shash256)
 
 x |> f = f x
 infixl 1 |>
