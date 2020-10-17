@@ -1,8 +1,5 @@
 {-# LANGUAGE RecordWildCards, LambdaCase #-}
 
--- idea: blockHeight field is really only needed in coinbase transaction,
--- what is an argument to seperate this tx as second type/constructor
-
 module BlockValidation where
 
 import Data.List (mapAccumL)
