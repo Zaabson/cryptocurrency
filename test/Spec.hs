@@ -2,6 +2,7 @@
 
 import Merkle
 import BlockType(Transaction(..))
+import BlockChainTest
 import Test.QuickCheck
 import Control.Parallel (pseq)
 
@@ -25,3 +26,4 @@ main = do
     quickCheck prop_powerOf2DoesntBreak
     quickCheck prop_notPowerOf2Break
     quickCheck prop_leastPowerOf2
+    quickCheckWith (stdArgs {maxSize = 4}) prop_cyclesThroughAll

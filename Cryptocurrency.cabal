@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e430bcb84960f781a4df8aa2937433c0ceff897b8516d4aa5d74de4a7e8a4da5
+-- hash: 26e4fd095620588a4285c3729e96a9ce1ff39890624b0cc07294a2537f05354d
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -12,6 +12,7 @@ build-type:     Simple
 
 library
   exposed-modules:
+      BlockChain
       BlockType
       BlockValidation
       Hashing
@@ -39,6 +40,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      BlockChainTest
       Paths_Cryptocurrency
   hs-source-dirs:
       test
