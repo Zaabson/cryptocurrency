@@ -103,5 +103,17 @@ validateCoinbaseMoney pool Block{transactions=txs, coinbaseTransaction=coinbase,
     where outputsMoney  = sumMoney (concatMap outputs txs) + sumMoney (coinbaseOutputs coinbase)
           mutxos   = txs |>  concatMap inputs |> searchPool pool |> sequenceA
           validCoinbase = case mutxos of
-              Nothing -> False   -- utxo not found in UTXOPool
-              Just utxos -> outputsMoney <= sumMoney utxos + calculateBlockReward (blockHeight coinbase)
+                Nothing    -> False   -- utxo not found in UTXOPool
+                Just utxos -> outputsMoney <= sumMoney utxos + calculateBlockReward (blockHeight coinbase)
+
+
+validateBlock :: UTXOPool -> Block -> Bool
+validateBlock pool block@Block{..} = txsOk && coinbaseOk
+    where (txsOk, newPool) = validateBlockTransactions pool block
+          coinbaseOk       = validateCoinbaseMoney pool block
+          -- blockchainOk  = linkToBlockchain $ blockRootHash block
+
+-- Ideas:
+--     - Blockchain typeclass that combines for example: blockchain with only headers, blockchain tree, 
+--                                                       (maybe UTXOPool as it also stores blockchain state, maybe record with UTXOPool)
+--     - should validateBlock function be a state/reader monad, reads and changes blockchain state?
