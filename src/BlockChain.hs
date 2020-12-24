@@ -59,6 +59,5 @@ cycle zip = zip : nexts zip Down
                 Just x  -> x : nexts x Left
         nexts zip Left =
             case goLeft zip of
-                Nothing -> nexts zip Down
+                Nothing -> nexts zip Up
                 Just x  -> x : nexts x Down
-
