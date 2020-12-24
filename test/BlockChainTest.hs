@@ -29,14 +29,21 @@ elems (Tree a ts) = a : concatMap elems ts
 -- prop_cyclesThroughAll t = all (`elem` elements) (elems t)
 --     where elements = map getElem . cycle $ toZipper t
 
+isTop :: Zipper a -> Bool
+isTop (Zipper _ (Root _)) = True 
+isTop _ = False 
+
 prop_cyclesThroughAllInSingleCycle :: Tree Int -> Bool
 prop_cyclesThroughAllInSingleCycle t = all (`Set.member` elemsInCycle) (elems t)
     where (x : xs) = cycle $ toZipper t
-          oneCycle = x : takeWhile (\case Zipper _ Top -> False
-                                          _ -> True) xs
+          oneCycle = x : takeWhile (not . isTop) xs
           elemsInCycle = Set.fromList $ map getElem oneCycle
 
 prop_finiteCycleTimeout :: Tree Int -> Property
 prop_finiteCycleTimeout t = within 15000000 (uncurry (&&) . (isTop . head &&& any isTop . Prelude.tail) . cycle . toZipper $ t)
-    where isTop z  = case z of Zipper _ Top -> True
-                               _            -> False
+
+instance Eq a => Eq (Tree a) where
+    Tree a ts == Tree b cs = a == b && and (zipWith (==) ts cs)
+
+prop_reverseToZipper :: Tree Int -> Bool
+prop_reverseToZipper t = t == fromZipper (toZipper t) 

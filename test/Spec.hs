@@ -28,3 +28,4 @@ main = do
     quickCheck prop_leastPowerOf2
     quickCheckWith (stdArgs {maxSize = 10}) prop_cyclesThroughAllInSingleCycle
     quickCheckWith (stdArgs {maxSize = 10}) prop_finiteCycleTimeout
+    quickCheckWith (stdArgs {maxSize = 10}) prop_reverseToZipper
