@@ -12,10 +12,12 @@ data Blocks = Blocks { fixed :: [Block],     -- blockchain so old its not gonna 
 -- Searches block tree looking for a Block that hashes to a matching previousHash,
 -- returns a zipper focused on this block - the new block should be inserted here as a child 
 linkToChain :: Block -> Tree Block -> Maybe (Zipper Block)
-linkToChain block tree =
-    let prevHash = blockPreviousHash block in
+linkToChain b t =
+    let prevHash = blockPreviousHash b in
     let pred = (==) prevHash . shash256 . blockHeader . getElem
-    in find pred $ fullCycle tree
+    in find pred $ fullCycle t
 
 insertToChain :: Block -> Tree Block -> Maybe (Tree Block)
-insertToChain = undefined 
+insertToChain b t = do
+    Zipper ts p <- linkToChain b t
+    return $ fromZipper $ Zipper (Tree b [] : ts) p
