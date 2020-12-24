@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 module BlockChainTest where
 
-import BlockChain
+import Zipper
 import Prelude hiding (cycle)
 import qualified Data.Set as Set
 import Test.QuickCheck
@@ -23,9 +23,6 @@ contains a (Tree b ts) =
 
 elems :: Tree a -> [a]
 elems (Tree a ts) = a : concatMap elems ts
-
-getElem :: Zipper a -> a
-getElem (Zipper (Tree a _) _) = a
 
 -- second one is more specific
 -- prop_cyclesThroughAll :: Tree Int -> Bool

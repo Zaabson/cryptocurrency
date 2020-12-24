@@ -16,11 +16,6 @@ import Hashing (HashOf(..), shash256)
 x |> f = f x
 infixl 1 |>
 
-instance Eq (HashOf a) where 
-    (Hash b) == (Hash c) = b == c
-instance Ord (HashOf a) where
-    compare (Hash b) (Hash s) = compare b s
-
 type UTXOPool = Map.Map (TXID, Integer) Output
 
 searchPool :: UTXOPool -> [Input] -> [Maybe Output]

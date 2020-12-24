@@ -13,6 +13,12 @@ import Crypto.Util (bs2i, i2bs_unsized)
 
 newtype HashOf a = Hash {getHash :: B.ByteString} deriving (Show, Generic)
 
+instance Eq (HashOf a) where 
+    (Hash b) == (Hash c) = b == c
+instance Ord (HashOf a) where
+    compare (Hash b) (Hash s) = compare b s
+
+
 -- JSON serialization achieved by converting hash ByteString to Integer
 instance ToJSON (HashOf a) where 
     toJSON (Hash b) = toJSON $ bs2i b

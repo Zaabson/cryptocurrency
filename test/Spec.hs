@@ -14,7 +14,7 @@ prop_leastPowerOf2 n = n > 0 ==> 2 ^ i >= n && 2 ^ (i - 1) <= n
 prop_powerOf2DoesntBreak = do 
     n :: Int <- choose (1, 12)
     let res = merkleHash $ replicate (2 ^ n) (Transaction [] [])
-    return $ res `pseq` True
+    return $ res `pseq` True  -- i don't remember what point did it have? is it alright?
 
 prop_notPowerOf2Break = expectFailure $ do 
     n :: Int <- choose (1, 12)

@@ -97,7 +97,7 @@ data Block = Block {
 instance FromJSON Block
 instance ToJSON Block
 
--- TODO: Change these to lenses:
+-- TODO: Change these to lenses (don't think it makes sense):
 
 blockNonce :: Block -> Integer
 blockNonce = nonce . blockHeader
