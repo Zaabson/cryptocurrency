@@ -1,0 +1,3 @@
+import TestUseCommandLine
+
+main = testMain
