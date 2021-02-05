@@ -12,6 +12,7 @@ import qualified Data.Map as Map
 import qualified Codec.Crypto.RSA as RSA
 import BlockType
 import Hashing (HashOf(..), shash256)
+import BlockChain (Blocks(..), linkToChain)
 
 x |> f = f x
 infixl 1 |>
@@ -102,13 +103,10 @@ validateCoinbaseMoney pool Block{transactions=txs, coinbaseTransaction=coinbase,
                 Just utxos -> outputsMoney <= sumMoney utxos + calculateBlockReward (blockHeight coinbase)
 
 
-validateBlock :: UTXOPool -> Block -> Bool
-validateBlock pool block@Block{..} = txsOk && coinbaseOk
+validateBlock :: Blocks -> UTXOPool -> Block -> Bool
+validateBlock blocks pool block@Block{..} = txsOk && coinbaseOk && blockchainOk
     where (txsOk, newPool) = validateBlockTransactions pool block
           coinbaseOk       = validateCoinbaseMoney pool block
-          -- blockchainOk  = linkToBlockchain $ blockRootHash block
-
--- Ideas:
---     - Blockchain typeclass that combines for example: blockchain with only headers, blockchain tree, 
---                                                       (maybe UTXOPool as it also stores blockchain state, maybe record with UTXOPool)
---     - should validateBlock function be a state/reader monad, reads and changes blockchain state?
+          blockchainOk     = case linkToChain block (lively blocks) of
+                                    Nothing -> False
+                                    Just _  -> True

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 01ce8ae97272688724bed6f15aa6fec02c401a96d66b8640c9bceea1e1f33ce9
+-- hash: 740deeae0ee042a4940e7b8671cb59d26a05b50a45f6256650880fc1e01e6144
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -18,7 +18,7 @@ library
       Hashing
       Merkle
       Message
-      Zipper
+      Tree
   other-modules:
       Paths_Cryptocurrency
   hs-source-dirs:

@@ -26,6 +26,4 @@ main = do
     quickCheck prop_powerOf2DoesntBreak
     quickCheck prop_notPowerOf2Break
     quickCheck prop_leastPowerOf2
-    quickCheckWith (stdArgs {maxSize = 10}) prop_cyclesThroughAllInSingleCycle
-    quickCheckWith (stdArgs {maxSize = 10}) prop_finiteCycleTimeout
     quickCheckWith (stdArgs {maxSize = 10}) prop_reverseToZipper

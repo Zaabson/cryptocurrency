@@ -1,12 +1,12 @@
 module BlockChain where
 
 import Data.List (find)
-import Zipper
+import Tree ( Zipper(..), Tree(..), getElem, fromZipper, dfs, insertHere )
 import Hashing ( shash256 ) 
 import BlockType
 
 data Blocks = Blocks { fixed :: [Block],     -- blockchain so old its not gonna change
-                       lively ::  Tree Block -- newly added blocks, small forks possible
+                       lively ::  Tree Block -- newly added blocks, short forks possible
                      } 
 
 -- Searches block tree looking for a Block that hashes to a matching previousHash,
@@ -15,9 +15,7 @@ linkToChain :: Block -> Tree Block -> Maybe (Zipper Block)
 linkToChain b t =
     let prevHash = blockPreviousHash b in
     let pred = (==) prevHash . shash256 . blockHeader . getElem
-    in find pred $ fullCycle t
+    in find pred $ dfs t
 
 insertToChain :: Block -> Tree Block -> Maybe (Tree Block)
-insertToChain b t = do
-    Zipper ts p <- linkToChain b t
-    return $ fromZipper $ Zipper (Tree b [] : ts) p
+insertToChain b t = fromZipper . insertHere b <$> linkToChain b t
