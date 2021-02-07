@@ -1,17 +1,18 @@
 name: Cryptocurrency
 
 dependencies:
-- base
-- containers
-- unordered-containers
-- bytestring
-- binary
-- mtl
-- aeson
-- time
-- crypto-api
-- cryptohash-sha256
-- RSA
+  - base
+  - containers
+  - unordered-containers
+  - bytestring
+  - binary
+  - mtl
+  - aeson
+  - time
+  - crypto-api
+  - cryptohash-sha256
+  - RSA
+  - network
 
 library:
   source-dirs: src

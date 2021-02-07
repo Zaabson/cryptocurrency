@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 740deeae0ee042a4940e7b8671cb59d26a05b50a45f6256650880fc1e01e6144
+-- hash: 9db3ebf3164a5e56c4e51c424e24b48adf6deb2321379068e17af817c2618c96
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -18,6 +18,7 @@ library
       Hashing
       Merkle
       Message
+      Server
       Tree
   other-modules:
       Paths_Cryptocurrency
@@ -33,6 +34,7 @@ library
     , crypto-api
     , cryptohash-sha256
     , mtl
+    , network
     , time
     , unordered-containers
   default-language: Haskell2010
@@ -42,6 +44,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       BlockChainTest
+      ServerTest
       Paths_Cryptocurrency
   hs-source-dirs:
       test
@@ -57,6 +60,7 @@ test-suite spec
     , crypto-api
     , cryptohash-sha256
     , mtl
+    , network
     , parallel
     , time
     , unordered-containers
