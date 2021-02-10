@@ -13,6 +13,7 @@ dependencies:
   - cryptohash-sha256
   - RSA
   - network
+  - async
 
 library:
   source-dirs: src

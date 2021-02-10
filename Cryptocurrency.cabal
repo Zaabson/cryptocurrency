@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9db3ebf3164a5e56c4e51c424e24b48adf6deb2321379068e17af817c2618c96
+-- hash: 91d03e41e5793ef50343533e5cfb10e2095f920f1829cacdc89e2b114b16880d
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -15,6 +15,7 @@ library
       BlockChain
       BlockType
       BlockValidation
+      Client
       Hashing
       Merkle
       Message
@@ -27,6 +28,7 @@ library
   build-depends:
       RSA
     , aeson
+    , async
     , base
     , binary
     , bytestring
@@ -44,7 +46,6 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       BlockChainTest
-      ServerTest
       Paths_Cryptocurrency
   hs-source-dirs:
       test
@@ -53,6 +54,7 @@ test-suite spec
     , QuickCheck
     , RSA
     , aeson
+    , async
     , base
     , binary
     , bytestring

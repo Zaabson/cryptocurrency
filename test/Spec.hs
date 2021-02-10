@@ -2,7 +2,7 @@
 
 import Merkle
 import BlockType(Transaction(..))
-import ClientTest
+import ServerTest
 import BlockChainTest
 import Test.QuickCheck
 import Control.Parallel (pseq)
@@ -28,4 +28,3 @@ main = do
     quickCheck prop_notPowerOf2Break
     quickCheck prop_leastPowerOf2
     quickCheckWith (stdArgs {maxSize = 10}) prop_reverseToZipper
-    quickCheck prop_split_reverses_append
