@@ -1,44 +1,46 @@
+
 module Server where
 
+import Control.Exception          (handle, IOException, finally)
+import Control.Concurrent         (ThreadId, forkIO, threadDelay, forkFinally)
+import Control.Monad              (forever, replicateM)
+import Control.Monad.IO.Class     (MonadIO, liftIO)
+import Control.Concurrent.MVar    (withMVar, newMVar, MVar)
+import Control.Arrow              (second,Arrow (first))
+import qualified Data.ByteString as B
+import qualified Data.ByteString.UTF8 as UTF8
+import Data.Int                   (Int32)
+import Data.Functor               (void) 
+import Text.Read                  (readMaybe)
+import System.IO                  (IOMode(ReadMode, ReadWriteMode), hSetBuffering, hClose, 
+                                   hGetContents, BufferMode (LineBuffering, NoBuffering), 
+                                   hPutStr, Handle, hIsEOF, hGetChar, hFlush)
+import System.Environment         (getArgs)
 import Network.Socket
-import Control.Exception (handle, IOException, finally)
-import Control.Concurrent (ThreadId, forkIO)
-import Control.Monad (forever, replicateM)
-import Control.Concurrent.MVar (withMVar, newMVar, MVar)
-import System.IO (IOMode(ReadMode, ReadWriteMode), hSetBuffering, hClose, hGetContents, BufferMode (LineBuffering, NoBuffering), hPutStr, Handle, hIsEOF, hGetChar)
-import Data.Functor (void)
-import Control.Arrow (second,Arrow (first))
-import Text.Read (readMaybe)
+import Network.Transport.Internal (encodeEnum32, decodeNum32) -- TODO avoid this dependency
+import qualified Network.Socket.ByteString as NSB
+import Control.Exception.Base (bracket)
 
--- first msgLenDigits signify the length of the rest of the message
-msgLenDigits = 10
-maxMsgSize = 10 ^ msgLenDigits
+-- A message is preceded with 32 bits that read as an Int32 state the length of the message in bits.
 
--- trim Int to be msgLenDigits digits long
-intToLenDigits :: Int -> String
-intToLenDigits x = replicate (msgLenDigits - length dropped) '0' ++ dropped  where 
-    str = show x
-    dropped = drop (length str - msgLenDigits) str
+appendLenBits :: B.ByteString -> B.ByteString
+appendLenBits bs = B.append (encodeEnum32 (toEnum $ B.length bs :: Int32)) bs
 
-appendLenDigits :: String -> String
-appendLenDigits str = intToLenDigits (length str) ++ str
+msgToBytes :: String -> B.ByteString
+msgToBytes = appendLenBits . UTF8.fromString
 
-readMessage :: Handle -> IO (Maybe String)
-readMessage hdl = do
-    mlen <- readn msgLenDigits hdl
-    case mlen >>= readMaybe of
-        Nothing  -> return Nothing
-        Just len -> readn len hdl
-    where 
-        mGetChar :: Handle -> IO (Maybe Char)
-        mGetChar hdl = do
-            eof <- hIsEOF hdl
-            if eof then
-                return Nothing 
-            else
-                Just <$> hGetChar hdl
-        readn :: Int -> Handle -> IO (Maybe String)
-        readn n hdl = sequence <$> replicateM n (mGetChar hdl)
+readMessage :: Socket -> IO (Maybe B.ByteString)
+readMessage sock = do 
+    lenBytes <- NSB.recv sock 4 
+    if B.length lenBytes == 4 then do
+        let len = decodeNum32 lenBytes
+        msg <- NSB.recv sock len
+        if B.length msg == len then
+            return $ Just msg
+        else
+            return Nothing
+    else
+        return Nothing
 
 -- type HostName = String
 -- Either a host name e.g., "haskell.org" or a numeric host address string consisting of a dotted decimal IPv4 address or an IPv6 address e.g., "192.168.0.1".
@@ -57,58 +59,65 @@ grabAddressInfo address =
         (Just $ serviceName address)
 
 
-type HandlerFunc = SockAddr -> String -> String
+type HandlerFunc = SockAddr -> B.ByteString -> B.ByteString 
 
-serverAddress = Address {hostName = "localhost", serviceName = "80"}
+type Miliseconds = Int
+timeOutToRecvTCP_FIN :: Miliseconds
+timeOutToRecvTCP_FIN = 1000
+
 maxConnections = 5
 
+-- Seems like i can change the type to MonadIO for free. I may want to use it as some transformer on IO
+-- But hey then i can just add liftIO there, in the transformer. Let's revert the change for now
 server :: Address
        -> HandlerFunc
        -> IO ()
 server servAddr handler = withSocketsDo $ do
-    
-    addrinfo <- grabAddressInfo servAddr
-
-    sock <- socket (addrFamily addrinfo) Stream defaultProtocol
-
-    -- bind it to the address we're listening to
-    bind sock (addrAddress addrinfo)
-
-    listen sock maxConnections
-
     lock <- newMVar ()
-
-    forever $ procRequest (logger lock) sock
+    bracket (open servAddr) close (loop lock)
 
     where
+
+    open servAddr = do 
+        addrinfo <- grabAddressInfo servAddr
+
+        sock <- socket (addrFamily addrinfo) Stream defaultProtocol
+
+        -- bind it to the address we're listening to
+        bind sock (addrAddress addrinfo)
+
+        listen sock maxConnections
+        
+        return sock
+
+    loop lock sock = forever (procRequest (logger lock) sock)
+
     -- | Proccess incoming connections
     procRequest :: (String -> IO ()) -> Socket -> IO ThreadId
     procRequest log mastersock =
         do  (connsock, clientaddr) <- accept mastersock  -- gets us new socket
             log "server: client connnected"
-            forkIO $ procConnection log connsock clientaddr
-
+            procConnection log connsock clientaddr 
+                `forkFinally`
+                const (gracefulClose connsock timeOutToRecvTCP_FIN)
+    
     -- | Process incoming messages
     procConnection :: (String -> IO ()) -> Socket -> SockAddr -> IO ()
     procConnection log connsock clientaddr =
-        do  connhdl <- socketToHandle connsock ReadWriteMode 
-            mmsg <- readMessage connhdl
+        do  mmsg <- readMessage connsock
             case mmsg of
                 Nothing -> 
-                    do hClose connhdl
-                       log "server: No valid message read. disconnected."
+                    log "server: No valid message read. disconnected."
                 Just msg -> 
                     finally 
-                        (hPutStr connhdl $ appendLenDigits $ handler clientaddr msg)
-                        (do hClose connhdl
-                            log "server: client disconnected")         
+                        (NSB.sendAll connsock $ appendLenBits $ handler clientaddr msg)
+                        (log "server: client disconnected")         
 
     logger :: MVar () -> String -> IO ()
     logger lock str = void $ forkIO $ withMVar lock (\a -> print str >> return a)
 
 answerPing :: HandlerFunc
-answerPing _ "ping" = "pong"
-answerPing _ _      = ""
+answerPing _ bs = UTF8.fromString $ if UTF8.toString bs == "ping" then "pong" else ""
 
 -- Return type of server can be RWST Config Log AppState IO () 
 -- But writing logs would be more like using a function thats prints somewhere

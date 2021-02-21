@@ -2,7 +2,6 @@
 
 import Merkle
 import BlockType(Transaction(..))
-import ServerTest
 import BlockChainTest
 import Test.QuickCheck
 import Control.Parallel (pseq)

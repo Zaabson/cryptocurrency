@@ -1,1 +1,3 @@
 Add locktime field to transaction.
+Avoid heavy network-transport dependency (it is used for a single encodeEnum32 function).
+Swaping the whole implementation with network-transport seems like a good idea.

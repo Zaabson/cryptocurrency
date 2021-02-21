@@ -10,7 +10,7 @@ import qualified Data.Binary as Binary
 import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
 import Data.Time.Clock (UTCTime)
 import Crypto.Util (bs2i, i2bs_unsized)
-import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves as the library was better documented
+import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves because the library was better documented
 import Hashing (HashOf, RawHash)
 
 newtype Cent = Cent Integer deriving (Show, Generic, Num, Ord, Eq)  -- currency unit

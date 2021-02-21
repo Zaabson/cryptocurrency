@@ -13,7 +13,9 @@ dependencies:
   - cryptohash-sha256
   - RSA
   - network
+  - network-transport
   - async
+  - utf8-string
 
 library:
   source-dirs: src

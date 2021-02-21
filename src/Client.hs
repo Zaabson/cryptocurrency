@@ -1,15 +1,23 @@
 module Client where
 
-import Network.Socket
-import Server
-import Control.Monad (forM, void)
-import Control.Monad.Cont (forM_)
-import Control.Concurrent.Async
-import System.IO (Handle, IOMode (WriteMode, ReadWriteMode), BufferMode (BlockBuffering, NoBuffering), hSetBuffering, hPutStr, hClose, hGetContents)
-import Control.Exception (bracket, handle, IOException)
-import Control.Concurrent (threadDelay)
+import           Control.Exception  (bracket, handle, IOException)
+import           Control.Concurrent (threadDelay)
+import           Control.Monad      (forM, void, forever)
+import           Control.Monad.Cont (forM_)
+import           Control.Concurrent.Async
+import qualified Data.ByteString as B
+import qualified Data.ByteString.UTF8 as UTF8
+import           System.IO          (Handle, IOMode (WriteMode, ReadWriteMode), 
+                                     BufferMode (BlockBuffering, NoBuffering), hSetBuffering,
+                                     hPutStr, hClose, hGetContents)
+import           System.Environment (getArgs)
+import           Network.Socket
+import qualified Network.Socket.ByteString as NSB
 
-makeConnection :: Address -> IO Handle
+
+import Server                       (Address, appendLenBits, grabAddressInfo, timeOutToRecvTCP_FIN, readMessage, msgToBytes)
+
+makeConnection :: Address -> IO Socket
 makeConnection address = withSocketsDo $
     do  addrinfos <- grabAddressInfo address
 
@@ -18,21 +26,15 @@ makeConnection address = withSocketsDo $
         setSocketOption sock KeepAlive 1
 
         connect sock (addrAddress addrinfos)
+        return sock
 
-        h <- socketToHandle sock ReadWriteMode
+withSocket :: Address -> (Socket -> IO a) -> IO a
+withSocket address = bracket (makeConnection address) (`gracefulClose` timeOutToRecvTCP_FIN)
 
-        hSetBuffering h NoBuffering
-        
-        return h
+send :: B.ByteString -> Address -> IO ()
+send msg address = withSocket address (`NSB.sendAll` msg)
 
-withConnection :: Address -> (Handle -> IO a) -> IO a
-withConnection address = bracket (makeConnection address) hClose
-
-send :: String -> Address -> IO ()
-send msg address = withConnection address $ \hdl -> 
-    hPutStr hdl (appendLenDigits msg)
-
-sendToAll :: [Address] -> String -> IO ()
+sendToAll :: [Address] -> B.ByteString -> IO ()
 sendToAll addresses msg = do
     forConcurrently_ addresses $ send msg
 
@@ -43,16 +45,20 @@ ping delay address =
     (const (return False) :: IOException -> IO Bool) `handle` tryPing
     where
     tryPing = 
-        withConnection address $ \hdl -> do 
+        withSocket address $ \sock -> do 
             -- send "ping"
-            hPutStr hdl (appendLenDigits "ping")
+            NSB.sendAll sock (msgToBytes "ping")
 
             -- look for answer
             answer <- async $ do
-                response <- readMessage hdl
+                response <- readMessage sock
                 case response of
                     Nothing     -> return False
-                    Just "pong" -> return True
+                    Just pong -> do
+                        if UTF8.toString pong == "pong" then
+                            return True
+                        else
+                            return False
             
             -- wait the delay 
             waiting <- async $ void $ threadDelay delay
@@ -61,5 +67,3 @@ ping delay address =
             return $ case res of
                 Left bl  -> bl
                 Right () -> False
-
-

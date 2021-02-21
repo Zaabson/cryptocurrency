@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 91d03e41e5793ef50343533e5cfb10e2095f920f1829cacdc89e2b114b16880d
+-- hash: 605e95a250f46418850f89cd4d280b03b61abfe7b074e132876a7feb050fb217
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -37,8 +37,10 @@ library
     , cryptohash-sha256
     , mtl
     , network
+    , network-transport
     , time
     , unordered-containers
+    , utf8-string
   default-language: Haskell2010
 
 test-suite spec
@@ -63,7 +65,9 @@ test-suite spec
     , cryptohash-sha256
     , mtl
     , network
+    , network-transport
     , parallel
     , time
     , unordered-containers
+    , utf8-string
   default-language: Haskell2010
