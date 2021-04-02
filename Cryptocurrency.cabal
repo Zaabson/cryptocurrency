@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 605e95a250f46418850f89cd4d280b03b61abfe7b074e132876a7feb050fb217
+-- hash: 4e28097a4e36c61075c4e3120f96c9196c16395a04ee9bc20c772785efb110b4
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -12,7 +12,9 @@ build-type:     Simple
 
 library
   exposed-modules:
+      App
       BlockChain
+      BlockCreation
       BlockType
       BlockValidation
       Client
@@ -21,39 +23,14 @@ library
       Message
       Server
       Tree
+      TXIDOptionsHere
+      Wallet
   other-modules:
       Paths_Cryptocurrency
   hs-source-dirs:
       src
   build-depends:
-      RSA
-    , aeson
-    , async
-    , base
-    , binary
-    , bytestring
-    , containers
-    , crypto-api
-    , cryptohash-sha256
-    , mtl
-    , network
-    , network-transport
-    , time
-    , unordered-containers
-    , utf8-string
-  default-language: Haskell2010
-
-test-suite spec
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  other-modules:
-      BlockChainTest
-      Paths_Cryptocurrency
-  hs-source-dirs:
-      test
-  build-depends:
-      Cryptocurrency
-    , QuickCheck
+      DRBG
     , RSA
     , aeson
     , async
@@ -66,7 +43,41 @@ test-suite spec
     , mtl
     , network
     , network-transport
+    , stm
+    , time
+    , unordered-containers
+    , utf8-string
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      ArbitraryBlock
+      BlockChainTest
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      test
+  build-depends:
+      Cryptocurrency
+    , DRBG
+    , QuickCheck
+    , RSA
+    , aeson
+    , async
+    , base
+    , binary
+    , bytestring
+    , combinat
+    , containers
+    , crypto-api
+    , cryptohash-sha256
+    , mtl
+    , network
+    , network-transport
     , parallel
+    , quickcheck-instances
+    , stm
     , time
     , unordered-containers
     , utf8-string

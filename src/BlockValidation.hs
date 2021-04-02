@@ -11,11 +11,16 @@ import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.Map as Map
 import qualified Codec.Crypto.RSA as RSA
 import BlockType
-import Hashing (HashOf(..), shash256)
-import BlockChain (Blocks(..), linkToChain)
+import Hashing (HashOf(..), shash256, toRawHash, targetHash)
+import BlockChain (LivelyBlocks(..), linkToChain)
 
 x |> f = f x
 infixl 1 |>
+
+data UTXO = UTXO TXID Integer Output -- TODO use this type below
+
+instance Eq UTXO where
+    (UTXO txid1 vout1 _) == (UTXO txid2 vout2 _) = (txid1 == txid2) && (vout1 == vout2)
 
 type UTXOPool = Map.Map (TXID, Integer) Output
 
@@ -30,11 +35,11 @@ sumMoney = sum . map outputDenomination
 -- signature field in input is set to empty bytestring, 
 -- signerPublicKey field needs to hash to a matching ownerPublicAddress field in referenced output.
 -- Such transaction is hashed and signed.
-createSignedInput :: Transaction     -- transaction to be signed, inputs don't matter, outputs and blockHeight are signed
+createSignedInput :: Transaction     -- transaction to be signed, inputs don't matter, outputs are signed
                   -> TXID            -- reference to UTXO
                   -> Integer         -- vout in referenced UTXO
                   -> RSA.PublicKey
-                  -> RSA.PrivateKey  
+                  -> RSA.PrivateKey
                   -> Input
 createSignedInput tx utxid vout pubKey privKey = unsignedInput {signature=signature}  where 
     unsignedInput = Input {signature=Signature B.empty, signerPublicKey=pubKey, utxoReference=utxid, vout=vout}
@@ -56,7 +61,18 @@ validTransaction pool tx = case sequenceA $ searchPool pool (inputs tx) of
     Nothing -> False
     Just unspend -> rightAmount unspend && verifyInputSignatures tx
     where 
-        rightAmount unspend =  sumMoney unspend >= sumMoney (outputs tx)
+        rightAmount unspend = sumMoney unspend >= sumMoney (outputs tx)
+
+-- this function is simmilar to the one above^
+-- it doesn't make sense to do this calculation (searching the UTXOPool) twice
+-- but I'll wait with changing it till I see how it's used in the running app
+validTransactionFee :: UTXOPool -> Transaction -> Maybe Cent  
+validTransactionFee pool tx = case sequenceA $ searchPool pool (inputs tx) of
+    Nothing -> Nothing
+    Just unspend -> Just $ fee unspend
+    where 
+        fee unspend = sumMoney unspend - sumMoney (outputs tx)
+
 
 -- Leave this implementation for testing
 -- first transaction is coinbase transaction.
@@ -65,11 +81,11 @@ validateBlockTransactions' :: UTXOPool -> Block -> (UTXOPool, Bool)
 validateBlockTransactions' pool Block{transactions=[], ..} = (pool, False)
 validateBlockTransactions' pool Block{transactions=txs, ..} = foldl f (pool, True) txs
     where f (pool, bool) tx = (foldl (flip $ uncurry Map.insert) pool (kvpairs tx), bool && validTransaction pool tx)
-          kvpairs tx = snd $ mapAccumL (\n o -> (n+1, ((shash256 tx, n), o))) 0 (outputs tx)
+          kvpairs tx = snd $ mapAccumL (\n o -> (n+1, ((shash256 $ Right tx, n), o))) 0 (outputs tx)
 
 -- !!! DONT FORGET COINBASE          
 
--- Validates all transactions in a block in order updating UTXOPool on the way.
+-- Validates all transactions in a block (in order) updating UTXOPool on the way.
 -- returns (True, UTXOPool updated by transactions in this block without coinbase) or (False, Junk)
 -- Note: Coinbase money cannot be created and spent in the same block, some number (to be specified later) of blocks needs to be waited
 validateBlockTransactions :: UTXOPool -> Block -> (Bool, UTXOPool)
@@ -78,12 +94,17 @@ validateBlockTransactions pool Block{transactions=txs, ..} = runState (validate 
           validate [] = return True
           validate (tx : rest) = do pool <- get
                                     let bool = validTransaction pool tx
-                                    let hash = shash256 tx
+                                    let hash = shash256 $ Right tx
                                     let kv   = tx |> outputs |> zip [0..] |> map (\case (n, o) -> ((hash, n), o))
                                     if not bool 
                                     then return False
                                     else do put $ foldl (flip $ uncurry Map.insert) pool kv
                                             (bool &&) <$> validate rest
+
+txGetNewUTXOs :: Transaction -> [UTXO]
+txGetNewUTXOs tx =
+    let hash = shash256 $ Right tx in
+    tx |> outputs |> zip [0..] |> map (\case (n, o) -> UTXO hash n o)
 
 blocksPerHalving :: Integer
 blocksPerHalving = 100000
@@ -102,11 +123,14 @@ validateCoinbaseMoney pool Block{transactions=txs, coinbaseTransaction=coinbase,
                 Nothing    -> False   -- utxo not found in UTXOPool
                 Just utxos -> outputsMoney <= sumMoney utxos + calculateBlockReward (blockHeight coinbase)
 
+validateNonce :: BlockHeader -> Bool
+validateNonce blck = toRawHash (shash256 blck) <= targetHash
 
-validateBlock :: Blocks -> UTXOPool -> Block -> Bool
-validateBlock blocks pool block@Block{..} = txsOk && coinbaseOk && blockchainOk
+validateBlock :: LivelyBlocks -> UTXOPool -> Block -> Bool
+validateBlock blocks pool block@Block{..} = txsOk && coinbaseOk && blockchainOk && nonceOk
     where (txsOk, newPool) = validateBlockTransactions pool block
           coinbaseOk       = validateCoinbaseMoney pool block
-          blockchainOk     = case linkToChain block (lively blocks) of
+          nonceOk          = validateNonce blockHeader
+          blockchainOk     = case linkToChain block (getLivelyBlocks blocks) of
                                     Nothing -> False
                                     Just _  -> True

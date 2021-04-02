@@ -2,3 +2,8 @@ resolver: lts-16.16
 
 packages:
   - .
+
+extra-deps:
+  - DRBG-0.5.5
+  - cipher-aes128-0.7.0.5@sha256:95c6327b0c93839f56e74cace17d9b85292214975bac9e8b7c13ebb725ba3856,3777
+  - combinat-0.2.9.0@sha256:3daed23a2376f8d9903dc2c1c3758f1f2a0527178c81023080507e5f5ddf5b7a,5107

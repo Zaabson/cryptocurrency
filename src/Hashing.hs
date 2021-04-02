@@ -7,6 +7,11 @@ import qualified Data.ByteString as B
 import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
 import GHC.Generics
 import Crypto.Util (bs2i, i2bs_unsized)
+import Data.ByteString (pack)
+
+-- TODO: target hash based on average mining speed 
+targetHash :: RawHash
+targetHash = RawHash $ pack $ replicate 10 0 ++ replicate 22 255 
 
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)
@@ -31,7 +36,7 @@ shash256 :: ToJSON a => a -> HashOf a
 shash256 = Hash . SHA256.hashlazy . encode
 
 -- type to be used instead of HashOf when the information about what was hashed can be lost.
-newtype RawHash = RawHash {rawHash :: B.ByteString} deriving (Eq, Show)
+newtype RawHash = RawHash {rawHash :: B.ByteString} deriving (Eq, Show, Ord)
 
 instance ToJSON RawHash where
     toJSON (RawHash b) = toJSON $ bs2i b
@@ -41,3 +46,7 @@ instance FromJSON RawHash where
 
 shashBytes :: B.ByteString -> B.ByteString
 shashBytes = SHA256.hash
+
+-- forgets type of a previously hashed thing  
+toRawHash :: HashOf a -> RawHash
+toRawHash (Hash bytes) = RawHash bytes

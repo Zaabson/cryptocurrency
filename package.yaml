@@ -16,6 +16,8 @@ dependencies:
   - network-transport
   - async
   - utf8-string
+  - stm
+  - DRBG
 
 library:
   source-dirs: src
@@ -28,3 +30,5 @@ tests:
       - Cryptocurrency
       - QuickCheck
       - parallel
+      - combinat
+      - quickcheck-instances

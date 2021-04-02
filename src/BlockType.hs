@@ -18,7 +18,7 @@ newtype Cent = Cent Integer deriving (Show, Generic, Num, Ord, Eq)  -- currency 
 instance FromJSON Cent
 instance ToJSON Cent
 
-type TXID = HashOf Transaction
+type TXID = HashOf (Either Coinbase Transaction)
 type PublicAddress = HashOf RSA.PublicKey
 
 newtype Signature = Signature B.ByteString deriving (Show, Generic)
@@ -72,15 +72,21 @@ data Input = Input {
     signature :: Signature,
     signerPublicKey :: RSA.PublicKey,
     utxoReference :: TXID, -- reference to UTXO
-    vout :: Integer -- input index in a transaction inputs, reference to UTXO
+    vout :: Integer -- output index in a transaction outputs, reference to UTXO
     } deriving (Show, Generic)
 
 instance FromJSON Input
 instance ToJSON Input
 
+newtype Genesis = Genesis String deriving (Show, ToJSON, FromJSON)
+-- instance FromJSON Genesis
+-- instance ToJSON Input
+
+type BlockReference = HashOf (Either Genesis BlockHeader)
+
 data BlockHeader = BlockHeader {
         nonce :: Integer,
-        previousHash :: HashOf BlockHeader,
+        previousHash :: BlockReference,
         timestamp :: UTCTime,
         rootHash :: RawHash
     } deriving (Show, Generic)
@@ -102,7 +108,7 @@ instance ToJSON Block
 blockNonce :: Block -> Integer
 blockNonce = nonce . blockHeader
 
-blockPreviousHash :: Block -> HashOf BlockHeader
+blockPreviousHash :: Block -> HashOf (Either Genesis BlockHeader)
 blockPreviousHash = previousHash . blockHeader
 
 blockTimestamp :: Block -> UTCTime
@@ -111,5 +117,5 @@ blockTimestamp = timestamp . blockHeader
 blockRootHash :: Block -> RawHash
 blockRootHash = rootHash . blockHeader
 
-blockHeightFromCoinbase :: Block -> Integer
-blockHeightFromCoinbase Block{coinbaseTransaction=c, ..} = blockHeight c
+blockBlockHeight :: Block -> Integer
+blockBlockHeight Block{coinbaseTransaction=c, ..} = blockHeight c
