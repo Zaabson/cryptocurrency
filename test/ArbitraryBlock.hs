@@ -28,7 +28,9 @@ makeRandomGen =  do
         let Right (g :: DRBG.HmacDRBG) = DRBG.newGen entropy
         return g
 
-testKeyLength = 256
+-- testKeyLength = 256
+testKeyLength = 512
+
 
 instance Arbitrary Keys where
     arbitrary = do
@@ -92,8 +94,8 @@ arbitraryPartitionShuffle xs =
             shuffle $ partitionList (fromPartition partition) xs
 
 testTargetHash :: RawHash
-testTargetHash = RawHash $ pack $ 0 : replicate 31 255 
-
+-- testTargetHash = RawHash $ pack $ 0 : replicate 31 255 
+testTargetHash = RawHash $ pack $ 0 : replicate 31 255
 
 -- Creates a new block with a given height and previous blockReference;
 -- block is created using some random share of provided OwnedUTXOs to create transactions;
@@ -119,9 +121,18 @@ arbitraryBlock prevblockref blockheight utxos = do
 
     return (coinbaseUtxo : unusedUtxos ++ (concat newUtxos) , newBlock)
 
+data BlockchainWithState = BlockchainWithState [OwnedUTXO] [Block] Genesis
+    deriving (Show)
+
+instance Arbitrary BlockchainWithState where
+    arbitrary = do
+        (utxos, blocks, genesis) <- arbitraryBlockchain
+        return $ BlockchainWithState utxos blocks genesis
+
 -- Creates arbitrary blockchain.
 -- Each turn a random selection of UTXOs is used to create a new block,
--- created UTXOs are accumulated along the way 
+-- first block is the newest and last block is first,
+-- created UTXOs are accumulated along the way.
 arbitraryBlockchain :: Gen ([OwnedUTXO], [Block], Genesis)
 arbitraryBlockchain = sized $ \maxheight -> do
         genesis <- arbitrary
@@ -135,7 +146,7 @@ arbitraryBlockchain = sized $ \maxheight -> do
                        -> Integer                     -- height of a block to create next
                        -> Gen ([OwnedUTXO], [Block]) 
         makeBlockchain maxheight utxos prevblockref blockheight =
-            if blockheight > maxheight then do
+            if blockheight <= maxheight then do
                 (utxos', block) <- arbitraryBlock prevblockref blockheight utxos
                 
                 let blockref = blockRef block

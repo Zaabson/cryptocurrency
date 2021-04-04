@@ -1,7 +1,7 @@
 module BlockCreation where
 
 import Merkle
-import Hashing (RawHash (RawHash), HashOf(..), shash256, toRawHash, targetHash)
+import Hashing (RawHash (RawHash), HashOf(..), shash256, toRawHash)
 import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.ByteString as B
 import Data.Time (UTCTime, getCurrentTime)
@@ -22,7 +22,11 @@ import BlockValidation (calculateBlockReward, createSignedInput, UTXO(..), txGet
 --   and maybe returning change  
 
 data Keys = Keys RSA.PublicKey RSA.PrivateKey
+
 data OwnedUTXO = OwnedUTXO UTXO Keys
+
+instance Show OwnedUTXO where
+    show (OwnedUTXO utxo _) = "Owned: " ++ show utxo
 
 howMuchCash :: OwnedUTXO -> Cent
 howMuchCash (OwnedUTXO (UTXO _ _ (Output cents _)) _) = cents
@@ -69,11 +73,6 @@ crunchNonce target merklehash timestamp prevhash =
             }
         blockWithNonce nonce = baseblock {nonce=nonce}
 
-mine :: RawHash -> UTCTime -> Coinbase -> [Transaction] -> BlockReference -> BlockHeader
-mine target timestamp coinbase txs prevhash =
-    let merklehash = merkleHash coinbase txs
-    in crunchNonce targetHash merklehash timestamp prevhash 
-
 -- Crunches hashes to find nonce, creates a block with given data.
 -- Doesn't include fees!!! TODO
 mineBlock :: RawHash               -- target hash
@@ -97,7 +96,7 @@ mineBlock target keys@(Keys pub _) timestamp txs newBlockHeight prevblockref =
         merklehash = merkleHash coinbase txs
         
         -- mine, crunch hashes to find a matching nonce to put into blockHeader
-        blockhdr = crunchNonce targetHash merklehash timestamp prevblockref
+        blockhdr = crunchNonce target merklehash timestamp prevblockref
 
 blockRef :: Block -> BlockReference
 blockRef = shash256 . Right . blockHeader

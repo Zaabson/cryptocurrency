@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4e28097a4e36c61075c4e3120f96c9196c16395a04ee9bc20c772785efb110b4
+-- hash: cabfd7c6d5e76f8615a7cb5c560c1a9202d4190412629bd1ac8635ebd0fee524
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -21,9 +21,9 @@ library
       Hashing
       Merkle
       Message
+      Message_too_short_error
       Server
       Tree
-      TXIDOptionsHere
       Wallet
   other-modules:
       Paths_Cryptocurrency
@@ -55,6 +55,7 @@ test-suite spec
   other-modules:
       ArbitraryBlock
       BlockChainTest
+      BlocksValidationTest
       Paths_Cryptocurrency
   hs-source-dirs:
       test
@@ -76,6 +77,7 @@ test-suite spec
     , network
     , network-transport
     , parallel
+    , pretty-simple
     , quickcheck-instances
     , stm
     , time

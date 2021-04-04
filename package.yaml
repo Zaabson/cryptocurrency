@@ -32,3 +32,4 @@ tests:
       - parallel
       - combinat
       - quickcheck-instances
+      - pretty-simple

@@ -1,3 +1,5 @@
-Add locktime field to transaction.
-Avoid heavy network-transport dependency (it is used for a single encodeEnum32 function).
-Swaping the whole of networking with network-transport seems like a good idea.
+  - Add locktime field to transaction.
+  - Avoid heavy network-transport dependency (it is used for a single encodeEnum32 function).
+  - Swaping the whole of networking with network-transport seems like a good idea. (but a late one)
+  - Improve validate functions not to calculate searchPool multiple times. Refactor so that coinbase UTXO is not forgotten about.
+  - Write more extensive block validation tests. Better after the ^ above refactor.
