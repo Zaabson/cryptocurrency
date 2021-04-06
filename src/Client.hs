@@ -5,14 +5,14 @@ import           Control.Concurrent (threadDelay)
 import           Control.Monad      (forM, void, forever)
 import           Control.Monad.Cont (forM_)
 import           Control.Concurrent.Async
-import qualified Data.ByteString as B
-import qualified Data.ByteString.UTF8 as UTF8
+import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy.UTF8 as UTF8
 import           System.IO          (Handle, IOMode (WriteMode, ReadWriteMode), 
                                      BufferMode (BlockBuffering, NoBuffering), hSetBuffering,
                                      hPutStr, hClose, hGetContents)
 import           System.Environment (getArgs)
 import           Network.Socket
-import qualified Network.Socket.ByteString as NSB
+import qualified Network.Socket.ByteString.Lazy as NSB
 
 
 import Server                       (Address, appendLenBits, grabAddressInfo, timeOutToRecvTCP_FIN, readMessage, msgToBytes)

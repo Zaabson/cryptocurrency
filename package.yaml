@@ -18,6 +18,8 @@ dependencies:
   - utf8-string
   - stm
   - DRBG
+  - optparse-applicative
+  - bytestring-conversion
 
 library:
   source-dirs: src

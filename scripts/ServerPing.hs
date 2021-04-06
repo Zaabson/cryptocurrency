@@ -4,5 +4,5 @@ import System.Environment (getArgs)
 main = do
     port : _ <- getArgs
     let addr = Address {hostName="localhost", serviceName=port}
-    server addr answerPing
+    server addr print answerPing
 

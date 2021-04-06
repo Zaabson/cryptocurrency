@@ -1,5 +1,7 @@
   - Add locktime field to transaction.
-  - Avoid heavy network-transport dependency (it is used for a single encodeEnum32 function).
   - Swaping the whole of networking with network-transport seems like a good idea. (but a late one)
-  - Improve validate functions not to calculate searchPool multiple times. Refactor so that coinbase UTXO is not forgotten about.
+  - Improve validate functions not to calculate searchPool multiple times. Refactor so that coinbase UTXO is not forgotten about in those functions.
   - Write more extensive block validation tests. Better after the ^ above refactor.
+  - Now there's blockchain file to read a starting blockchain from and file to output blockchain after closing the node.
+    The blockchain is kept in memory during running time. App should better append new blocks in real time and also
+    app should store minimal subset of the whole blockchain in ram. Better not to mess up this in a rush, so this will need to wait. 

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cabfd7c6d5e76f8615a7cb5c560c1a9202d4190412629bd1ac8635ebd0fee524
+-- hash: 39c3c58b339886bfe03a637df14de074fe5975116a80efa0da209f567324dc36
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -37,12 +37,14 @@ library
     , base
     , binary
     , bytestring
+    , bytestring-conversion
     , containers
     , crypto-api
     , cryptohash-sha256
     , mtl
     , network
     , network-transport
+    , optparse-applicative
     , stm
     , time
     , unordered-containers
@@ -69,6 +71,7 @@ test-suite spec
     , base
     , binary
     , bytestring
+    , bytestring-conversion
     , combinat
     , containers
     , crypto-api
@@ -76,6 +79,7 @@ test-suite spec
     , mtl
     , network
     , network-transport
+    , optparse-applicative
     , parallel
     , pretty-simple
     , quickcheck-instances
