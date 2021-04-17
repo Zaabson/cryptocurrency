@@ -28,11 +28,13 @@ data OwnedUTXO = OwnedUTXO UTXO Keys
 instance Show OwnedUTXO where
     show (OwnedUTXO utxo _) = "Owned: " ++ show utxo
 
+newtype TargetHash = TargetHash RawHash
+
 howMuchCash :: OwnedUTXO -> Cent
 howMuchCash (OwnedUTXO (UTXO _ _ (Output cents _)) _) = cents
 
 createSignedInputFromUTXO :: Transaction -> OwnedUTXO -> Input
-createSignedInputFromUTXO tx (OwnedUTXO (UTXO txid vout out) (Keys pub priv)) = createSignedInput tx txid vout pub priv
+createSignedInputFromUTXO tx (OwnedUTXO (UTXO txid vout _) (Keys pub priv)) = createSignedInput tx txid vout pub priv
 
 -- creates a transaction sending coins to an address
 -- and the surplus/change to new Address 
@@ -52,7 +54,9 @@ createTransaction utxos outs =
     let inputs = map (createSignedInputFromUTXO tx) utxos in 
     tx {inputs = inputs}
 
+keysLength :: Int
 keysLength = 1024
+
 generateKeys :: CryptoRandomGen g =>  g -> Keys
 generateKeys g = Keys pub priv
     where (pub, priv, _) = RSA.generateKeyPair g keysLength 
@@ -61,8 +65,8 @@ generateKeys g = Keys pub priv
 -- generateKeyPair :: RandomGen g => g -> Int -> (PublicKey, PrivateKey, g)
 
 -- heats up till it finds nonce producing hash not greater than target
-crunchNonce :: RawHash -> RawHash -> UTCTime -> BlockReference -> BlockHeader
-crunchNonce target merklehash timestamp prevhash = 
+crunchNonce :: TargetHash -> RawHash -> UTCTime -> BlockReference -> BlockHeader
+crunchNonce (TargetHash target) merklehash timestamp prevhash = 
     fromJust $ find (\b -> toRawHash (shash256 b) <= target) $ map blockWithNonce [0..]
     where
         baseblock = BlockHeader {
@@ -75,7 +79,7 @@ crunchNonce target merklehash timestamp prevhash =
 
 -- Crunches hashes to find nonce, creates a block with given data.
 -- Doesn't include fees!!! TODO
-mineBlock :: RawHash               -- target hash
+mineBlock :: TargetHash               -- target hash
           -> Keys                  -- keys for coinbase output
           -> UTCTime               -- creation time
           -> [Transaction]         -- transactions to include
@@ -102,7 +106,7 @@ blockRef :: Block -> BlockReference
 blockRef = shash256 . Right . blockHeader
 
 -- convenience to mine a block appending to a given previous block
-mineAfterBlock :: RawHash -> Keys -> UTCTime -> Block -> [Transaction] -> (OwnedUTXO, Block)
+mineAfterBlock :: TargetHash -> Keys -> UTCTime -> Block -> [Transaction] -> (OwnedUTXO, Block)
 mineAfterBlock target keys timestamp prevblock txs = 
     mineBlock target keys timestamp txs (blockBlockHeight prevblock + 1) (blockRef prevblock)
 

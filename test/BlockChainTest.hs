@@ -1,6 +1,6 @@
 module BlockChainTest where
 
-import Tree
+import BlockChain
 import Prelude hiding (cycle)
 import qualified Data.Set as Set
 import Test.QuickCheck

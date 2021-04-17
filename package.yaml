@@ -1,5 +1,7 @@
 name: Cryptocurrency
 
+# ghc-options: -Wall
+
 dependencies:
   - base
   - containers
@@ -13,7 +15,6 @@ dependencies:
   - cryptohash-sha256
   - RSA
   - network
-  - network-transport
   - async
   - utf8-string
   - stm

@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
 module Message where
-
 import Data.Aeson
 import qualified Data.HashMap.Strict as HM
 import BlockType (Block, Transaction)

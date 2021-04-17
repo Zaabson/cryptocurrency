@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 39c3c58b339886bfe03a637df14de074fe5975116a80efa0da209f567324dc36
+-- hash: d9a4a788de22104d0fddf126938dbfdc5d631d30560b20d0e9764bd6addcf412
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -23,7 +23,6 @@ library
       Message
       Message_too_short_error
       Server
-      Tree
       Wallet
   other-modules:
       Paths_Cryptocurrency
@@ -43,7 +42,6 @@ library
     , cryptohash-sha256
     , mtl
     , network
-    , network-transport
     , optparse-applicative
     , stm
     , time
@@ -78,7 +76,6 @@ test-suite spec
     , cryptohash-sha256
     , mtl
     , network
-    , network-transport
     , optparse-applicative
     , parallel
     , pretty-simple

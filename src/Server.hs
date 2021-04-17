@@ -102,7 +102,7 @@ server :: Address
        -> HandlerFunc
        -> IO ()
 server servAddr logger handler = withSocketsDo $ do
-    bracket (open servAddr) close (loop logger)
+    bracket (open servAddr) close loop
 
     where
 
@@ -118,7 +118,7 @@ server servAddr logger handler = withSocketsDo $ do
         
         return sock
 
-    loop lock sock = forever (procRequest logger sock)
+    loop sock = forever (procRequest logger sock)
 
     -- | Proccess incoming connections
     procRequest :: (String -> IO ()) -> Socket -> IO ThreadId

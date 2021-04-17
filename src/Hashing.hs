@@ -10,8 +10,8 @@ import GHC.Generics
 import Crypto.Util (bs2i, i2bs_unsized)
 
 -- TODO: target hash based on average mining speed 
-targetHash :: RawHash
-targetHash = RawHash $ B.pack $ replicate 10 0 ++ replicate 22 255 
+-- targetHash :: RawHash
+-- targetHash = RawHash $ B.pack $ replicate 10 0 ++ replicate 22 255 
 
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)

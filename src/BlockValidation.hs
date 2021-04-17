@@ -152,6 +152,7 @@ validateCoinbaseMoney pool Block{transactions=txs, coinbaseTransaction=coinbase,
 validateNonce :: BlockHeader -> Bool
 validateNonce blck = toRawHash (shash256 blck) <= targetHash
 
+-- This possibly doesn't need to check linkToBlockchain. 
 validateBlock :: LivelyBlocks -> UTXOPool -> Block -> Bool
 validateBlock blocks pool block@Block{..} = txsOk && coinbaseOk && blockchainOk && nonceOk
     where (txsOk, newPool) = validateBlockTransactions pool block
