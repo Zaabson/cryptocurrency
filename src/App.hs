@@ -8,7 +8,7 @@ import System.IO (withBinaryFile, IOMode (ReadMode, AppendMode), hPutStr, withFi
 import Data.Aeson (encode, decode, encodeFile, FromJSON, ToJSON, decodeFileStrict)
 import qualified Data.ByteString.Lazy as LazyB (hGetContents)
 import Control.Concurrent.STM (TVar, STM, modifyTVar', stateTVar, newTVarIO, readTVarIO, newTVar, readTVar, atomically, writeTVar, modifyTVar)
-import BlockChain (LivelyBlocks (LivelyBlocks), FixedBlocks (FixedBlocks), Blockchain(..), insertToChain, newTree)
+import BlockChain (LivelyBlocks (LivelyBlocks), FixedBlocks (FixedBlocks), Blockchain(..), insertToChain, newTree, ForkMaxDiff(ForkMaxDiff), updateWithBlock, BlockchainUpdated (..))
 import qualified Data.Sequence as Seq (Seq, (|>), take, length, splitAt, empty)
 import Control.Arrow (first)
 import GHC.Generics (Generic)
@@ -20,11 +20,14 @@ import Data.Time (getCurrentTime, hoursToTimeZone, formatTime, defaultTimeLocale
 import Network.Socket (ServiceName, SockAddr)
 import Message (Message (..), Answer(..))
 import Control.Exception (onException)
-import BlockCreation (TargetHash)
+import Hashing (TargetHash(TargetHash), RawHash(RawHash))
+import qualified Data.ByteString as B
+import Control.Monad.Reader (ReaderT)
+import BlockValidation (UTXOPool)
 
-data MiningMode
-    = Mining
-    | Idle
+-- data MiningMode
+--     = Mining
+--     | Idle
 
 loadData :: FromJSON a => FilePath -> IO (Maybe a)
 loadData path = withBinaryFile path ReadMode ((decode <$>) . LazyB.hGetContents) 
@@ -139,7 +142,26 @@ parseCommand = info parseCommand
 forkMaxDiff :: ForkMaxDiff
 forkMaxDiff = ForkMaxDiff 2  
 
-handleMessage :: AppState -> (String -> IO ()) -> SockAddr -> Message -> IO Answer
+class HasUTXOPool env where
+    getUTXOPool :: env -> UTXOPool
+
+class HasBlocks env where
+    getRecentBlocks :: env -> LivelyBlocks
+    getOldBlocks    :: env -> FixedBlocks
+
+class HasTargetHash env where
+    getTargetHash :: env -> TargetHash
+
+class HasLogging env where
+    getLogger :: env -> String -> IO ()
+    -- getLogger :: MonadIO m => env -> String -> m ()
+
+handleMessage :: (HasUTXOPool env, HasBlocks env, HasLogging env) => 
+                -- AppState
+            --   -> (String -> IO ())
+                 SockAddr
+              -> Message
+              -> ReaderT env IO Answer
 handleMessage appSt log sockaddr PingMessage = do
     log "handler: Received Ping."
     return AnswerPing
@@ -147,14 +169,22 @@ handleMessage appSt log sockaddr PingMessage = do
 handleMessage (AppState {recentBlocks, oldBlocks}) log sockaddr (BlockMessage block) = do
     
     logmsg <- atomically $ do 
+        -- Note that this atomical operation is costly.
+
         lively <- readTVar recentBlocks
         fixed  <- readTVar oldBlocks
 
         -- try to link a new block to one of the recent blocks
-        let (lively', fixed') = updateWithBlock forkMaxDiff block lively fixed
-        writeTVar recentBlocks lively'
-        writeTVar oldBlocks fixed'
-    
+        case updateWithBlock _ _ _ _ _ _ of
+            BlockInserted fixed' lively' -> do
+                writeTVar recentBlocks lively'
+                writeTVar oldBlocks fixed'
+                return "Received block was inserted into chain."
+            BlockAlreadyInserted -> return "Received block was already present in the chain."
+            BlockInvalid         -> return "Received block is invalid."
+            BlockNotLinked       -> return "Received block can't be linked."
+
+        
         -- TODO: Could log whether the block could be linked
         -- return "handler: Received block inserted to blockchain."
         -- return "handler: Failed to connect block to blockchain." 
@@ -163,6 +193,7 @@ handleMessage (AppState {recentBlocks, oldBlocks}) log sockaddr (BlockMessage bl
         -- TODO: Needs to tag nodes in LivelyBlocks with UTXOPool-s collected up to a node
     
     log logmsg
+    -- log "Received block, don't know if it fits into chain \\_[*-*]_/"
 
     return ReceivedBlock
 
@@ -174,11 +205,10 @@ handleMessage appSt log sockaddr (TransactionMessage tx) = do
 
 -- move this somewhere more appriopraite (or don't)
 difficultyToTargetHash :: Int -> TargetHash
-difficultyToTargetHash n = RawHash $ B.pack $ replicate n 0 ++ replicate (32-n) 255 
-
+difficultyToTargetHash n = TargetHash . RawHash . B.pack $ replicate n 0 ++ replicate (32-n) 255 
 
 --                                         target difficulty
-mining :: AppState -> (String -> IO ()) -> Int -> IO ()
+mining :: (HasTargetHash env) => AppState -> (String -> IO ()) -> Int -> ReaderT env IO ()
 mining appState log n = do
 
     undefined 
