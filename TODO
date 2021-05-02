@@ -7,4 +7,5 @@
     app should store minimal subset of the whole blockchain in ram. Better not to mess up this in a rush, so this will need to wait. 
   - ReaderT Env IO and HasConfig style constraints on Env 
   - Strategy - have all the code that does stuff ready and only then refactor, knowing better what refactor makes sense
-  - ! Tag nodes in LivelyBlocks with UTXOPool-s. Then add a proper validation of an incoming block.
+  - Some things are recalculated at need (utxopool for nodes in LivelyBlocks). Consider keeping this in memory.
+  - Oh! We forgot UTXOPool as part of AppState (possibly). Wait to make the change with Reader and configs.
