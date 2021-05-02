@@ -13,6 +13,8 @@ import Crypto.Util (bs2i, i2bs_unsized)
 -- targetHash :: RawHash
 -- targetHash = RawHash $ B.pack $ replicate 10 0 ++ replicate 22 255 
 
+newtype TargetHash = TargetHash RawHash
+
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)
 

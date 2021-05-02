@@ -9,7 +9,7 @@ import Data.ByteString (ByteString, pack)
 import Data.Word (Word8)
 import BlockCreation (Keys(..), OwnedUTXO(..), howMuchCash, createTransaction, mineBlock, blockRef)
 import BlockValidation (UTXO(..))
-import Hashing (shash256, RawHash(..))
+import Hashing (shash256, RawHash(..), TargetHash(..))
 import Math.Combinat.Partitions (randomPartition, fromPartition)
 import Data.List (mapAccumL)
 import Test.QuickCheck.Random (QCGen, Splittable (right))
@@ -93,9 +93,9 @@ arbitraryPartitionShuffle xs =
             let (partition, _) = randomPartition (length xs) g in 
             shuffle $ partitionList (fromPartition partition) xs
 
-testTargetHash :: RawHash
+testTargetHash :: TargetHash
 -- testTargetHash = RawHash $ pack $ 0 : replicate 31 255 
-testTargetHash = RawHash $ pack $ 0 : replicate 31 255
+testTargetHash = TargetHash . RawHash . pack $ 0 : replicate 31 255
 
 -- Creates a new block with a given height and previous blockReference;
 -- block is created using some random share of provided OwnedUTXOs to create transactions;
