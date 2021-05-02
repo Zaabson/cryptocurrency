@@ -1,7 +1,7 @@
 module BlockCreation where
 
 import Merkle
-import Hashing (RawHash (RawHash), HashOf(..), shash256, toRawHash)
+import Hashing (RawHash (RawHash), HashOf(..), shash256, toRawHash, TargetHash(TargetHash))
 import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.ByteString as B
 import Data.Time (UTCTime, getCurrentTime)
@@ -27,8 +27,6 @@ data OwnedUTXO = OwnedUTXO UTXO Keys
 
 instance Show OwnedUTXO where
     show (OwnedUTXO utxo _) = "Owned: " ++ show utxo
-
-newtype TargetHash = TargetHash RawHash
 
 howMuchCash :: OwnedUTXO -> Cent
 howMuchCash (OwnedUTXO (UTXO _ _ (Output cents _)) _) = cents

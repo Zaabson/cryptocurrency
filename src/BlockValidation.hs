@@ -11,13 +11,13 @@ import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.Map as Map
 import qualified Codec.Crypto.RSA as RSA
 import BlockType
-import Hashing (HashOf(..), shash256, toRawHash, targetHash)
-import BlockChain (LivelyBlocks(..), linkToChain)
+import Hashing (HashOf(..), shash256, toRawHash, TargetHash(..))
+-- import BlockChain (LivelyBlocks(..), linkToChain)
 
 x |> f = f x
 infixl 1 |>
 
-data UTXO = UTXO TXID Integer Output -- TODO use this type below
+data UTXO = UTXO TXID Integer Output -- TODO use this type below (or don't)
     deriving (Show)
 
 instance Eq UTXO where
@@ -74,12 +74,12 @@ validTransaction pool tx = case sequenceA $ searchPool pool (inputs tx) of
 -- this function is simmilar to the one above^
 -- it doesn't make sense to do this calculation (searching the UTXOPool) twice
 -- but I'll wait with changing it till I see how it's used in the running app
-validTransactionFee :: UTXOPool -> Transaction -> Maybe Cent  
-validTransactionFee pool tx = case sequenceA $ searchPool pool (inputs tx) of
-    Nothing -> Nothing
-    Just unspend -> Just $ fee unspend
-    where 
-        fee unspend = sumMoney unspend - sumMoney (outputs tx)
+-- validTransactionFee :: UTXOPool -> Transaction -> Maybe Cent  
+-- validTransactionFee pool tx = case sequenceA $ searchPool pool (inputs tx) of
+--     Nothing -> Nothing
+--     Just unspend -> Just $ fee unspend
+--     where 
+--         fee unspend = sumMoney unspend - sumMoney (outputs tx)
 
 -- !! Bug: doesn't remove referenced UTXOs from pool 
 -- Leave this implementation for testing
@@ -121,6 +121,7 @@ validateBlockTransactions pool Block{transactions=txs, coinbaseTransaction=coinb
                                     else do 
                                         put pool2
                                         (bool &&) <$> validate rest
+
 coinbaseGetNewUTXOs :: Coinbase -> [UTXO]
 coinbaseGetNewUTXOs tx = 
     let hash = shash256 $ Left tx in
@@ -149,15 +150,24 @@ validateCoinbaseMoney pool Block{transactions=txs, coinbaseTransaction=coinbase,
                 Nothing    -> False   -- utxo not found in UTXOPool
                 Just utxos -> outputsMoney <= sumMoney utxos + calculateBlockReward (blockHeight coinbase)
 
-validateNonce :: BlockHeader -> Bool
-validateNonce blck = toRawHash (shash256 blck) <= targetHash
+validateNonce :: TargetHash -> BlockHeader -> Bool
+validateNonce (TargetHash targetHash) blck = toRawHash (shash256 blck) <= targetHash
 
--- This possibly doesn't need to check linkToBlockchain. 
-validateBlock :: LivelyBlocks -> UTXOPool -> Block -> Bool
-validateBlock blocks pool block@Block{..} = txsOk && coinbaseOk && blockchainOk && nonceOk
+-- This possibly doesn't need to check linkToBlockchain <- done.
+-- validateBlock :: TargetHash -> UTXOPool -> Block -> Bool
+-- validateBlock targetHash pool block@Block{..} = txsOk && coinbaseOk && nonceOk          -- && blockchainOk 
+--     where (txsOk, newPool) = validateBlockTransactions pool block
+--           coinbaseOk       = validateCoinbaseMoney pool block
+--           nonceOk          = validateNonce targetHash blockHeader
+--         --   blockchainOk     = case linkToChain block (getLivelyBlocks blocks) of
+--         --                             Nothing -> False
+--         --                             Just _  -> True
+
+-- TODO: maybe some searching through pool can be optimized combining validateCoinbasae and validateTransactions
+-- This possibly doesn't need to check linkToBlockchain <- done.
+validateBlock :: TargetHash -> UTXOPool -> Block -> (Bool, UTXOPool)
+validateBlock targetHash pool block@Block{..} = (txsOk && coinbaseOk && nonceOk, newPool)          -- && blockchainOk 
     where (txsOk, newPool) = validateBlockTransactions pool block
           coinbaseOk       = validateCoinbaseMoney pool block
-          nonceOk          = validateNonce blockHeader
-          blockchainOk     = case linkToChain block (getLivelyBlocks blocks) of
-                                    Nothing -> False
-                                    Just _  -> True
+          nonceOk          = validateNonce targetHash blockHeader
+    
