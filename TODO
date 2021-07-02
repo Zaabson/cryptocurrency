@@ -5,7 +5,8 @@
   - Now there's blockchain file to read a starting blockchain from and file to output blockchain after closing the node (not exactly!).
     The blockchain is kept in memory during running time. App should better append new blocks in real time and also
     app should store minimal subset of the whole blockchain in ram. Better not to mess up this in a rush, so this will need to wait. 
-  - ReaderT Env IO and HasConfig style constraints on Env 
+  - ReaderT Env IO and HasConfig style constraints on Env  <- nope!
   - Strategy - have all the code that does stuff ready and only then refactor, knowing better what refactor makes sense
   - Some things are recalculated at need (utxopool for nodes in LivelyBlocks). Consider keeping this in memory.
-  - Oh! We forgot UTXOPool as part of AppState (possibly). Wait to make the change with Reader and configs.
+  - Oh! We forgot UTXOPool as part of AppState (possibly).
+  - Implement node querying functionality.

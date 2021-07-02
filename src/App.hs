@@ -3,27 +3,34 @@
 module App where
 
 import Server (Address(..), server, HandlerFunc)
-import BlockType (Block, Transaction)
+import BlockType (Block (blockHeader), Transaction, BlockHeader (timestamp))
 import System.IO (withBinaryFile, IOMode (ReadMode, AppendMode), hPutStr, withFile, Handle)
 import Data.Aeson (encode, decode, encodeFile, FromJSON, ToJSON, decodeFileStrict)
 import qualified Data.ByteString.Lazy as LazyB (hGetContents)
-import Control.Concurrent.STM (TVar, STM, modifyTVar', stateTVar, newTVarIO, readTVarIO, newTVar, readTVar, atomically, writeTVar, modifyTVar)
-import BlockChain (LivelyBlocks (LivelyBlocks), FixedBlocks (FixedBlocks), Blockchain(..), insertToChain, newTree, ForkMaxDiff(ForkMaxDiff), updateWithBlock, BlockchainUpdated (..))
+import Control.Concurrent.STM (TVar, STM, modifyTVar', stateTVar, newTVarIO, readTVarIO, newTVar, readTVar, atomically, writeTVar, modifyTVar, retry, check, orElse)
+import BlockChain (LivelyBlocks (LivelyBlocks), FixedBlocks (FixedBlocks), Blockchain(..), insertToChain, newTree, ForkMaxDiff(ForkMaxDiff), updateWithBlock, BlockchainUpdated (..), collectUTXOs, getLastBlock)
 import qualified Data.Sequence as Seq (Seq, (|>), take, length, splitAt, empty)
 import Control.Arrow (first)
 import GHC.Generics (Generic)
 import Options.Applicative
 import Data.Maybe (fromJust)
-import Control.Concurrent (MVar, forkIO, withMVar, newMVar)
-import Control.Monad (void)
+import Control.Concurrent (MVar, forkIO, withMVar, newMVar, threadDelay)
+import Control.Monad (void, forever)
 import Data.Time (getCurrentTime, hoursToTimeZone, formatTime, defaultTimeLocale)
 import Network.Socket (ServiceName, SockAddr)
 import Message (Message (..), Answer(..))
 import Control.Exception (onException)
-import Hashing (TargetHash(TargetHash), RawHash(RawHash))
+import Hashing (TargetHash(TargetHash), RawHash(RawHash), shash256)
 import qualified Data.ByteString as B
 import Control.Monad.Reader (ReaderT)
 import BlockValidation (UTXOPool)
+import qualified Data.Map as Map
+import BlockCreation (Keys(Keys), mineAfterBlock, OwnedUTXO (OwnedUTXO))
+import qualified Codec.Crypto.RSA as RSA
+import Crypto.Random.DRBG (newGenIO)
+import Data.Foldable (toList)
+import Control.Concurrent.Async (async, race, waitEitherCancel, waitSTM, race_)
+import qualified Crypto.Random.DRBG as DRBG
 
 -- data MiningMode
 --     = Mining
@@ -93,7 +100,8 @@ data AppState = AppState {
     recentBlocks :: TVar LivelyBlocks,
     oldBlocks    :: TVar FixedBlocks,
     incomingTxs  :: TVar (Seq.Seq Transaction),
-    peers        :: TVar PeersList
+    peers        :: TVar PeersList,
+    utxoPool     :: TVar UTXOPool 
     }
 
 appendTransaction :: Transaction -> AppState -> STM ()
@@ -142,87 +150,114 @@ parseCommand = info parseCommand
 forkMaxDiff :: ForkMaxDiff
 forkMaxDiff = ForkMaxDiff 2  
 
-class HasUTXOPool env where
-    getUTXOPool :: env -> UTXOPool
-
-class HasBlocks env where
-    getRecentBlocks :: env -> LivelyBlocks
-    getOldBlocks    :: env -> FixedBlocks
-
-class HasTargetHash env where
-    getTargetHash :: env -> TargetHash
-
-class HasLogging env where
-    getLogger :: env -> String -> IO ()
-    -- getLogger :: MonadIO m => env -> String -> m ()
-
-handleMessage :: (HasUTXOPool env, HasBlocks env, HasLogging env) => 
-                -- AppState
-            --   -> (String -> IO ())
-                 SockAddr
+handleMessage :: ForkMaxDiff
+              -> TargetHash
+              -> AppState
+              -> (String -> IO ())
+              -> SockAddr
               -> Message
-              -> ReaderT env IO Answer
-handleMessage appSt log sockaddr PingMessage = do
+              -> IO Answer
+handleMessage _ _ appSt log sockaddr PingMessage = do
     log "handler: Received Ping."
     return AnswerPing
 
-handleMessage (AppState {recentBlocks, oldBlocks}) log sockaddr (BlockMessage block) = do
+handleMessage forkMaxDiff targetHash (AppState {recentBlocks, oldBlocks, utxoPool}) log sockaddr (BlockMessage block) = do
     
-    logmsg <- atomically $ do 
-        -- Note that this atomical operation is costly.
+    -- do the validation etc concurrently not to hold a connection for long
+    forkIO $ do
+        logmsg <- atomically $ do 
+            -- Note that this atomical operation is costly.
 
-        lively <- readTVar recentBlocks
-        fixed  <- readTVar oldBlocks
+            lively   <- readTVar recentBlocks
+            fixed    <- readTVar oldBlocks
+            utxoPool <- readTVar utxoPool
 
-        -- try to link a new block to one of the recent blocks
-        case updateWithBlock _ _ _ _ _ _ of
-            BlockInserted fixed' lively' -> do
-                writeTVar recentBlocks lively'
-                writeTVar oldBlocks fixed'
-                return "Received block was inserted into chain."
-            BlockAlreadyInserted -> return "Received block was already present in the chain."
-            BlockInvalid         -> return "Received block is invalid."
-            BlockNotLinked       -> return "Received block can't be linked."
+            -- try to link a new block to one of the recent blocks
+            case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed of
+                BlockInserted fixed' lively' -> do
+                    writeTVar recentBlocks lively'
+                    writeTVar oldBlocks fixed'
+                    return "Received block was inserted into chain."
+                BlockAlreadyInserted -> return "Received block was already present in the chain."
+                BlockInvalid         -> return "Received block is invalid."
+                BlockNotLinked       -> return "Received block can't be linked."
 
-        
-        -- TODO: Could log whether the block could be linked
-        -- return "handler: Received block inserted to blockchain."
-        -- return "handler: Failed to connect block to blockchain." 
-        
-        -- TODO: Hey, hey, hey! Where the hell is validation check??
-        -- TODO: Needs to tag nodes in LivelyBlocks with UTXOPool-s collected up to a node
-    
-    log logmsg
-    -- log "Received block, don't know if it fits into chain \\_[*-*]_/"
+            -- TODO: Could tag nodes in LivelyBlocks with UTXOPool-s collected up to a node - tradeof between speed and memory
+        log logmsg
 
     return ReceivedBlock
 
-handleMessage appSt log sockaddr (TransactionMessage tx) = do 
+handleMessage _ _ appSt log sockaddr (TransactionMessage tx) = do 
     -- append new transaction to queue
-    atomically $ appendTransaction tx appSt
-    log "handler: Received new transaction."
+    forkIO $ do
+        atomically $ appendTransaction tx appSt
+        log "handler: Received new transaction."
+
     return ReceivedTransaction
 
 -- move this somewhere more appriopraite (or don't)
 difficultyToTargetHash :: Int -> TargetHash
 difficultyToTargetHash n = TargetHash . RawHash . B.pack $ replicate n 0 ++ replicate (32-n) 255 
 
---                                         target difficulty
-mining :: (HasTargetHash env) => AppState -> (String -> IO ()) -> Int -> ReaderT env IO ()
-mining appState log n = do
+-- Constant
+keyLength :: Int
+keyLength = 2048
 
-    undefined 
+generateKeys :: IO Keys
+generateKeys = do
+    g <- newGenIO :: IO DRBG.HmacDRBG
+    let (pub, priv, _) = RSA.generateKeyPair g keyLength
+    return $ Keys pub priv
+
+blocksEqual :: Block -> Block -> Bool
+blocksEqual b1 b2 = shash256 (blockHeader b1) == shash256 (blockHeader b2)
+
+
+-- This needs some more thinking. How to force lazy haskell to mine?
+-- Also combining those waits will be tricky 
+mining :: TargetHash -> AppState -> (String -> IO ()) -> IO ()
+mining targetHash (AppState {recentBlocks, incomingTxs=incomingTxs}) log = forever $ do
+    
+    txs <- atomically $ do
+        txs <- readTVar incomingTxs
+        if null txs then
+            retry
+        else
+            return txs
+
+    lastblock <- getLastBlock <$> readTVarIO recentBlocks
+
+    -- listen for new longest forks.
+    -- Thread returns when there's been an update in recentBlocks
+    -- and now different block is a leaf furthest from root.
+    let waitNewFork = atomically $ do
+        newlastblock <- getLastBlock <$> readTVar recentBlocks
+        check (shash256 (blockHeader newlastblock) /= shash256 (blockHeader lastblock))
+
+    doMining lastblock (toList txs) `race_` threadDelay 240000000 `race_` waitNewFork
 
     where
-        target = difficultyToTargetHash n
 
-        doMining = do
+        doMining lastblock txs = do
             timestamp <- getCurrentTime
-            undefined 
+            -- keys for coinbase money
+            keys <- generateKeys
+            let (ownedUTXO, block) = mineAfterBlock targetHash keys timestamp lastblock txs
+
+            -- collect utxo in wallet:
+            -- TODO
+            _ ownedUTXO
+
+            --  broadcast block
+            -- TODO
+            _ block
 
 
 -- TODO: Who creates genesis block? is it part of running a node? 
 -- IRL genesis and some initial contact list would be settled on outside the protocol or hardcoded into the protocol.
+
+-- Recalculate UTXOPool on start or load it from file?
+-- TODO: Load it ^ from file.
 
 runNode :: IO ()
 runNode = do
@@ -232,6 +267,8 @@ runNode = do
     -- make logging function
     loggerlock <- newMVar ()
     let log = logger (loggingMode config) loggerlock
+
+    let targetHash = difficultyToTargetHash $ targetDifficulty config
 
     -- TODO: optional cmd arg to load state from save, otherwise only loads
 
@@ -250,20 +287,21 @@ runNode = do
                                          <*> newTVarIO (FixedBlocks tail) 
                                          <*> newTVarIO Seq.empty
                                          <*> newTVarIO peers
+                                         <*> newTVarIO (collectUTXOs Map.empty tail)  -- tail because UTXOPool of FixedBlocks - head is inside LivelyBlocks
                     
                     --
                     -- mining
 
                     -- 
-                    -- catching up to blockchain
+                    -- TODO: catching up to blockchain
                     -- query for blocks after our last block
 
                     -- Idea connected with above ^ :
-                    -- Enhance LivelyBlocks type to collect also future blocks i.e. blocks that might build on 
+                    -- TODO: Enhance LivelyBlocks type to collect also future blocks i.e. blocks that might build on 
                     -- top of blocks we have not received yet.  
 
                     let serverAddr = Address "localhost" (port config)
-                    forkIO $ server serverAddr log (serverHandler appState log) 
+                    forkIO $ server serverAddr log (serverHandler (handleMessage forkMaxDiff targetHash appState log) log)
 
                     return ()
 
@@ -280,14 +318,14 @@ runNode = do
                 ToFile path -> withFile path AppendMode (`hPutStr` msg)
             return a)
         
-        serverHandler :: AppState -> (String -> IO ()) -> HandlerFunc
-        serverHandler appSt log sockAddr msgbytes = do
+        serverHandler :: (SockAddr -> Message -> IO Answer) -> (String -> IO ()) -> HandlerFunc
+        serverHandler handler log sockAddr msgbytes = do
             case decode msgbytes of 
                 Nothing -> do 
                     log "handler: Unable to parse message."
                     return $ encode MessageParseError
                 Just msg -> do
-                    answer <- handleMessage appSt log sockAddr msg
+                    answer <-  handler sockAddr msg
                     return $ encode answer
             
 
