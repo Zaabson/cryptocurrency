@@ -13,13 +13,13 @@ import BlockValidation (UTXOPool, UTXO(..), txGetNewUTXOs, validateBlock)
 import qualified Data.Map as Map
 
 -- Returns a leaf furthest from root, "arbitrary" one if there's a draw
--- getLastBlock :: LivelyBlocks -> Block
--- getLastBlock (LivelyBlocks tree) = snd $ go 0 tree
---     where
---         comp a@(n, _) (m, _) | n >= m = a
---         comp _ b = b
---         go n (Tree b []) = (n, b)
---         go n (Tree _ ts)   =  foldl1' comp . map (go (n+1)) $ ts
+getLastBlock :: LivelyBlocks -> Block
+getLastBlock (LivelyBlocks tree) = snd $ go 0 tree
+    where
+        comp a@(n, _) (m, _) | n >= m = a
+        comp _ b = b
+        go n (Tree b []) = (n, b)
+        go n (Tree _ ts)   =  foldl1' comp . map (go (n+1)) $ ts
 
 -- TODO: Now pruning is unnecessarily run on the whole tree at every insert. This can be improved. 
 
@@ -121,15 +121,16 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
         pathFromRoot :: Zipper Block -> [Block]
         pathFromRoot (Zipper _ pl) = pathFromRootA pl []
 
-        collectUTXOs :: UTXOPool -> [Block] -> UTXOPool
-        collectUTXOs pool = foldl' insert2map pool
+collectUTXOs :: UTXOPool -> [Block] -> UTXOPool
+collectUTXOs = foldl' insert2map
+    where
 
-        -- size(pool) = n, size(block) = m
-        -- does m insertions working in O(mlogn)
-        insert2map :: UTXOPool -> Block -> UTXOPool
-        insert2map pool (Block {transactions=txs}) =
-            foldl' (\pl (UTXO txid vout out) -> Map.insert (txid, vout) out pl) pool
-                   (concatMap txGetNewUTXOs txs)
+    -- size(pool) = n, size(block) = m
+    -- does m insertions working in O(mlogn)
+    insert2map :: UTXOPool -> Block -> UTXOPool
+    insert2map pool (Block {transactions=txs}) =
+        foldl' (\pl (UTXO txid vout out) -> Map.insert (txid, vout) out pl) pool
+                (concatMap txGetNewUTXOs txs)
 
 
 -- we will be appending new blocks, so let the order be:
@@ -170,6 +171,9 @@ insertToChain b t =
             insertHere b z
         else
             z
+
+-- blocksEqual :: Block -> Block -> Bool
+-- blocksEqual b1 b2 = shash256 (blockHeader b1) == shash256 (blockHeader b2)
 
 -- checks whether given block is already inserted as a child of focused node in zipper
 -- check is achieved by comparing blockheader hashes
