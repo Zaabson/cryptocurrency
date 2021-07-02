@@ -290,7 +290,7 @@ runNode = do
                                          <*> newTVarIO (collectUTXOs Map.empty tail)  -- tail because UTXOPool of FixedBlocks - head is inside LivelyBlocks
                     
                     --
-                    -- mining
+                    mining targetHash appState log 
 
                     -- 
                     -- TODO: catching up to blockchain
