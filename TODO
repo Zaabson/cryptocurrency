@@ -9,4 +9,8 @@
   - Strategy - have all the code that does stuff ready and only then refactor, knowing better what refactor makes sense
   - Some things are recalculated at need (utxopool for nodes in LivelyBlocks). Consider keeping this in memory.
   - Oh! We forgot UTXOPool as part of AppState (possibly).
-  - Implement node querying functionality.
+  - Implement node querying functionality. For now make it dumb and quick only to be able to finaly run node. 
+    Also improving it doesn't make sense before blockchain is moved out of runtime and into some database.
+  - Wallet
+  - Delete unneeded future blocks (can be done based on blockHeight)
+  - Fix bug of reading/writing fixed and lively blocks in seperate atomic operations.

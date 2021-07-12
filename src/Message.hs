@@ -8,12 +8,14 @@ import GHC.Generics (Generic)
 data Message = PingMessage
              | BlockMessage Block
              | TransactionMessage Transaction
+             | QueryMessage Query
     deriving (Show, Generic)
 
 data Answer = AnswerPing
             | ReceivedBlock
             | ReceivedTransaction
             | MessageParseError
+            | QueryAnswer QueryResult
     deriving (Show, Generic)
 
 instance ToJSON Message
@@ -21,6 +23,21 @@ instance FromJSON Message
 
 instance ToJSON Answer
 instance FromJSON Answer
+
+data Query
+    = BlockAtHeight Integer
+    deriving (Show, Generic)
+
+instance ToJSON Query
+instance FromJSON Query
+
+data QueryResult
+    = RequestedBlock Block
+    | NoBlockFound
+    deriving (Show, Generic)
+
+instance ToJSON QueryResult
+instance FromJSON QueryResult
 
 -- honestly, do I need to write these myself? 
     

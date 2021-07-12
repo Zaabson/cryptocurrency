@@ -16,6 +16,7 @@ import qualified Network.Socket.ByteString.Lazy as NSB
 
 
 import Server                       (Address, appendLenBits, grabAddressInfo, timeOutToRecvTCP_FIN, readMessage, msgToBytes)
+import Data.Either (fromLeft)
 
 makeConnection :: Address -> IO Socket
 makeConnection address = withSocketsDo $
@@ -34,9 +35,30 @@ withSocket address = bracket (makeConnection address) (`gracefulClose` timeOutTo
 send :: B.ByteString -> Address -> IO ()
 send msg address = withSocket address (`NSB.sendAll` msg)
 
-sendToAll :: [Address] -> B.ByteString -> IO ()
-sendToAll addresses msg = do
+sendToAll :: B.ByteString -> [Address] -> IO ()
+sendToAll msg addresses = do
     forConcurrently_ addresses $ send msg
+
+-- Send bytes, await a response (0.3s) and do something with the response if we get it
+sendAndReceive :: B.ByteString -> Address -> (Maybe B.ByteString -> IO a) -> IO a
+sendAndReceive msg address k = do
+    response <- ((\e -> return (Right ())) :: IOException -> IO (Either a ())) `handle` awaitResponse
+    
+    k $ fromLeft Nothing response 
+
+    where
+        awaitResponse = withSocket address $ \sock -> do
+            -- send "ping"
+            NSB.sendAll sock (appendLenBits msg)
+
+            -- look for answer
+            answer <- async (readMessage sock)
+                
+            -- wait the delay 
+            waiting <- async $ void $ threadDelay 300000
+
+            answer `waitEitherCancel` waiting
+        
 
 type Microseconds = Int
 

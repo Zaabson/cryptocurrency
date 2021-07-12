@@ -21,6 +21,7 @@ dependencies:
   - DRBG
   - optparse-applicative
   - bytestring-conversion
+  - sampling
 
 library:
   source-dirs: src

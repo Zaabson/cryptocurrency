@@ -11,7 +11,8 @@ import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
 import Data.Time.Clock (UTCTime)
 import Crypto.Util (bs2i, i2bs_unsized)
 import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves because the library was better documented
-import Hashing (HashOf, RawHash)
+-- Using RSA instead of elliptic curves because the library was better documented
+import Hashing (HashOf, RawHash, shash256)
 
 newtype Cent = Cent Integer deriving (Show, Generic, Num, Ord, Eq)  -- currency unit
 
@@ -99,6 +100,12 @@ data Block = Block {
     coinbaseTransaction :: Coinbase,
     transactions :: [Transaction]
     } deriving (Show, Generic)
+
+instance Eq Block where 
+    x == y = shash256 (blockHeader x) == shash256 (blockHeader y)
+
+instance Ord Block where 
+    compare x y = compare (shash256 $ blockHeader x) (shash256 $ blockHeader y)
 
 instance FromJSON Block
 instance ToJSON Block
