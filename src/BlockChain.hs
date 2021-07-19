@@ -78,11 +78,11 @@ fixBlocks maxdiff tree = go (height tree - maxdiff) [] tree
 -- change type to encompass info on how it went
 
 data BlockchainUpdated
-    = BlockInserted FixedBlocks LivelyBlocks
+    = BlockInserted FixedBlocks LivelyBlocks UTXOPool
     | FutureBlock FutureBlocks
     | BlockAlreadyInserted
     | BlockInvalid
-    | BlockNotLinked
+-- | BlockNotLinked
 
 -- TODO: collect also blocks that don't connect to blockchain in some "future queue" 
 
@@ -118,7 +118,7 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                     -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is is pruned and old blocks are moved to FixedBlocks.
                     let (newfixed, lively) = fixBlocks maxdiff . prune maxdiff . fromZipper $ case zipper of
                             Zipper ts pl -> Zipper (newtree : ts) pl
-                    in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks lively)
+                    in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks lively) (collectUTXOs utxoPool newfixed)
                 else
                     BlockInvalid
 
@@ -199,8 +199,11 @@ instance FromJSON FixedBlocks
 instance ToJSON LivelyBlocks
 instance FromJSON LivelyBlocks
 
+-- note: LivelyBlocks is by definition non-empty.
 -- type not in use but this is blockchain: 
-data Blockchain = Blockchain FixedBlocks LivelyBlocks Genesis
+data Blockchain
+    = Blockchain FixedBlocks LivelyBlocks Genesis
+    | Empty Genesis
 
 -- Searches block tree looking for a Block that hashes to a matching previousHash,
 -- returns a zipper focused on this block - the new block should be inserted here as a child 

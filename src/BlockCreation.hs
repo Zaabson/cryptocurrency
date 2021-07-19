@@ -108,7 +108,11 @@ mineAfterBlock :: TargetHash -> Keys -> UTCTime -> Block -> [Transaction] -> (Ow
 mineAfterBlock target keys timestamp prevblock txs = 
     mineBlock target keys timestamp txs (blockBlockHeight prevblock + 1) (blockRef prevblock)
 
--- not needed right?
+mineAfterGenesis :: TargetHash -> Keys -> UTCTime -> Genesis -> [Transaction] -> (OwnedUTXO, Block)
+mineAfterGenesis target keys timestamp genesis txs = 
+    mineBlock target keys timestamp txs 1 (shash256 $ Left genesis)
+
+-- not needed right? <- nope
 -- First mined block doesn't have any transactions as there's no money to spend yet,
 -- it creates the first existing money in coinbase 
 -- mineFirst :: RawHash -> Keys -> UTCTime -> Genesis -> (OwnedUTXO, Block)
