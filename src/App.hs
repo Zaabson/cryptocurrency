@@ -1,16 +1,13 @@
-{-# LANGUAGE RecordWildCards, DeriveGeneric #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards, DeriveGeneric, NamedFieldPuns, LambdaCase, ScopedTypeVariables #-}
 module App where
 
 import Server (Address(..), server, HandlerFunc)
-import BlockType (Block (blockHeader), Transaction, BlockHeader (timestamp), blockBlockHeight, Genesis (Genesis), blockPreviousHash)
+import BlockType (Block (blockHeader), Transaction, BlockHeader (timestamp), blockBlockHeight, Genesis (Genesis), blockPreviousHash, BlockReference)
 import System.IO (withBinaryFile, IOMode (ReadMode, AppendMode), hPutStr, withFile, Handle)
 import Data.Aeson (encode, decode, encodeFile, FromJSON, ToJSON, decodeFileStrict, eitherDecodeFileStrict)
 import qualified Data.ByteString.Lazy as LazyB (hGetContents)
 import Control.Concurrent.STM (TVar, STM, modifyTVar', stateTVar, newTVarIO, readTVarIO, newTVar, readTVar, atomically, writeTVar, modifyTVar, retry, check, orElse)
-import BlockChain (LivelyBlocks (LivelyBlocks), FixedBlocks (FixedBlocks), Blockchain(..), insertToChain, newTree, ForkMaxDiff(ForkMaxDiff), updateWithBlock, BlockchainUpdated (..), collectUTXOs, getLastBlock, FutureBlocks (FutureBlocks), root, forest)
+import BlockChain (LivelyBlocks (LivelyBlocks), FixedBlocks (FixedBlocks, getFixedBlocks), Blockchain(..), insertToChain, newTree, ForkMaxDiff(ForkMaxDiff), updateWithBlock, BlockchainUpdated (..), collectUTXOs, getLastBlock, FutureBlocks (FutureBlocks), root, forest)
 import qualified Data.Sequence as Seq (Seq, (|>), take, length, splitAt, empty)
 import Control.Arrow (first, Arrow ((&&&), (***)))
 import GHC.Generics (Generic)
@@ -27,7 +24,7 @@ import qualified Data.ByteString as B
 import Control.Monad.Reader (ReaderT)
 import BlockValidation (UTXOPool, UTXO (UTXO), validateBlock)
 import qualified Data.Map as Map
-import BlockCreation (Keys(Keys), mineAfterBlock, OwnedUTXO (OwnedUTXO), mineAfterGenesis, blockRef)
+import BlockCreation (Keys(Keys), OwnedUTXO (OwnedUTXO), mineBlock, blockRef)
 import qualified Codec.Crypto.RSA as RSA
 import Crypto.Random.DRBG (newGenIO)
 import Data.Foldable (toList, find, Foldable (foldl'))
@@ -114,44 +111,44 @@ instance FromJSON PeersList
 -- LivelyBlocks by definition contains at least one block, so we differentiate between the empty case.
 -- The invariant is that root of LivelyBlocks is the next block after the head of FixedBlocks.
 -- Also UTXOPool is a pool of txs up of all FixedBlocks.
-type BlockchainState = Either Genesis BlockchainState'
+-- type BlockchainState = Either Genesis BlockchainState
     
-data BlockchainState' = BlockchainState' Genesis (TVar FixedBlocks) (TVar LivelyBlocks) (TVar FutureBlocks) (TVar UTXOPool)
+data BlockchainState = BlockchainState Genesis (TVar FixedBlocks) (TVar LivelyBlocks) (TVar FutureBlocks) (TVar UTXOPool)
 
-readFixedBlocks :: BlockchainState' -> STM FixedBlocks
-readFixedBlocks (BlockchainState' _ fixed _ _ _) = readTVar fixed
+readFixedBlocks :: BlockchainState -> STM FixedBlocks
+readFixedBlocks (BlockchainState _ fixed _ _ _) = readTVar fixed
 
-readLivelyBlocks :: BlockchainState' -> STM LivelyBlocks
-readLivelyBlocks (BlockchainState' _ _ lively _ _) = readTVar lively
+readLivelyBlocks :: BlockchainState -> STM LivelyBlocks
+readLivelyBlocks (BlockchainState _ _ lively _ _) = readTVar lively
 
-readFutureBlocks :: BlockchainState' -> STM FutureBlocks
-readFutureBlocks (BlockchainState' _ _ _ future _) = readTVar future
+readFutureBlocks :: BlockchainState -> STM FutureBlocks
+readFutureBlocks (BlockchainState _ _ _ future _) = readTVar future
 
-readUTXOPool :: BlockchainState' -> STM UTXOPool
-readUTXOPool (BlockchainState' _ _ _ _ utxoPool) = readTVar utxoPool
+readUTXOPool :: BlockchainState -> STM UTXOPool
+readUTXOPool (BlockchainState _ _ _ _ utxoPool) = readTVar utxoPool
 
-writeFixedBlocks :: BlockchainState' -> FixedBlocks -> STM ()
-writeFixedBlocks (BlockchainState' _ fixed _ _ _) = writeTVar fixed
+writeFixedBlocks :: BlockchainState -> FixedBlocks -> STM ()
+writeFixedBlocks (BlockchainState _ fixed _ _ _) = writeTVar fixed
 
-writeLivelyBlocks :: BlockchainState' -> LivelyBlocks -> STM ()
-writeLivelyBlocks (BlockchainState' _ _ lively _ _) = writeTVar lively
+writeLivelyBlocks :: BlockchainState -> LivelyBlocks -> STM ()
+writeLivelyBlocks (BlockchainState _ _ lively _ _) = writeTVar lively
 
-writeFutureBlocks :: BlockchainState' -> FutureBlocks -> STM ()
-writeFutureBlocks (BlockchainState' _ _ _ future _) = writeTVar future
+writeFutureBlocks :: BlockchainState -> FutureBlocks -> STM ()
+writeFutureBlocks (BlockchainState _ _ _ future _) = writeTVar future
 
-writeUTXOPool :: BlockchainState' -> UTXOPool -> STM ()
-writeUTXOPool (BlockchainState' _ _ _ _ utxoPool) = writeTVar utxoPool
+writeUTXOPool :: BlockchainState -> UTXOPool -> STM ()
+writeUTXOPool (BlockchainState _ _ _ _ utxoPool) = writeTVar utxoPool
 
 
 
 -- probably unneeded? Genesis is only important for empty blockchain 
--- getGenesis :: BlockchainState' -> Genesis
--- getGenesis BlockchainState' _ _ _ _ genesis = genesis
+-- getGenesis :: BlockchainState -> Genesis
+-- getGenesis BlockchainState _ _ _ _ genesis = genesis
 
 -- TODO: Investigate all the places where I forgot about genesis.
 
 data AppState = AppState {
-    blockchainState :: TVar BlockchainState,    
+    blockchainState :: BlockchainState,   
     incomingTxs  :: TVar (Seq.Seq Transaction),
     peers        :: TVar PeersList
     }
@@ -199,10 +196,10 @@ parseCommand = info parseCommand
                 <> metavar "TARGET"
                 <> help "Filepath for the config file" )
 
--- takes block and creates the BlockchainState' for a single block assuming that it links to Genesis
-createBlockchainState' :: Genesis -> Block -> STM BlockchainState'
+-- takes block and creates the BlockchainState for a single block assuming that it links to Genesis
+createBlockchainState' :: Genesis -> Block -> STM BlockchainState
 createBlockchainState' genesis block =
-    BlockchainState' genesis <$> newTVar (FixedBlocks [])
+    BlockchainState genesis <$> newTVar (FixedBlocks [])
                              <*> newTVar (LivelyBlocks {root=shash256 (Left genesis), forest=[newTree block]})
                              <*> newTVar (FutureBlocks Map.empty)
                              <*> newTVar Map.empty
@@ -225,59 +222,42 @@ handleMessage _ _ appSt log sockaddr PingMessage = do
 handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) log sockaddr (BlockMessage block) = do
     
     -- do the validation etc concurrently not to hold a connection for long
-    forkIO . join . atomically $ do 
-        blockchainSt <- readTVar blockchainState
-        either toGenesis toBlockchain blockchainSt
+    forkIO . join . atomically $ do
+        -- Note that this atomical operation is time-consuming.
+        lively   <- readLivelyBlocks blockchainState
+        fixed    <- readFixedBlocks blockchainState
+        future   <- readFutureBlocks blockchainState
+        utxoPool <- readUTXOPool blockchainState
 
-    -- forkIO $ either blockchainState toGenesis toBlockchain
-                
+        -- try to link a new block to one of the recent blocks
+        case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
+            BlockInserted fixed' lively' utxoPool' -> do
+                writeLivelyBlocks blockchainState lively'
+                writeFixedBlocks blockchainState fixed'
+                writeUTXOPool blockchainState utxoPool'
+                return $ do
+                    log "handler: Received block was inserted into chain."
+                    -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
+                    PeersList addresses <- readTVarIO peers
+                    forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())            
+            FutureBlock future'   -> do
+                writeFutureBlocks blockchainState future'
+                return $ do 
+                    log "handler: Received block inserted into futures waiting list."
+                    -- We received a block that doesn't link to a known recent chain. Let's query for new blocks.
+                    catchUpToBlockchain forkMaxDiff targetHash appSt log
+            BlockAlreadyInserted -> return $ log "handler: Received block was already present in the chain."
+            BlockInvalid         -> return $ log "handler: Received block is invalid."
+            BLockInsertedLinksToRoot lively' -> do
+                writeLivelyBlocks blockchainState lively'
+                return $ do
+                    log "handler: Inserted block linking to genesis."
+                    -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
+                    PeersList addresses <- readTVarIO peers
+                    forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())
+                            
     return ReceivedBlock
 
-    where 
-
-        toGenesis genesis = case validateBlock targetHash Map.empty block of
-            (True, _) -> do
-                blockchainState' <- createBlockchainState' genesis block
-                writeTVar blockchainState (Right blockchainState')
-                return $ log "handler: Received first block after genesis."
-            (False, _) -> return $ log "handler: Received invalid block linking to genesis."
-
-
-        toBlockchain blockchainState' = do
-            -- Note that this atomical operation is time-consuming.
-
-            lively   <- readLivelyBlocks blockchainState'
-            fixed    <- readFixedBlocks blockchainState'
-            future   <- readFutureBlocks blockchainState'
-            utxoPool <- readUTXOPool blockchainState'
-
-            -- try to link a new block to one of the recent blocks
-            case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
-                BlockInserted fixed' lively' utxoPool' -> do
-                    writeLivelyBlocks blockchainState' lively'
-                    writeFixedBlocks blockchainState' fixed'
-                    writeUTXOPool blockchainState' utxoPool'
-                    return $ do
-                        log "handler: Received block was inserted into chain."
-                        -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                        PeersList addresses <- readTVarIO peers
-                        forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())            
-                FutureBlock future'   -> do
-                    writeFutureBlocks blockchainState' future'
-                    return $ do 
-                        log "handler: Received block inserted into futures waiting list."
-                        -- We received a block that doesn't link to a known recent chain. Let's query for new blocks.
-                        catchUpToBlockchain forkMaxDiff targetHash appSt log
-                BlockAlreadyInserted -> return $ log "handler: Received block was already present in the chain."
-                BlockInvalid         -> return $ log "handler: Received block is invalid."
-                BLockInsertedLinksToRoot lively' -> do
-                    writeLivelyBlocks blockchainState' lively'
-                    return $ do
-                        log "handler: Inserted block linking to genesis."
-                        -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                        PeersList addresses <- readTVarIO peers
-                        forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())
-                
 
 handleMessage _ _ appSt log sockaddr (TransactionMessage tx) = do 
     -- append new transaction to queue
@@ -292,7 +272,7 @@ handleMessage _ _ (AppState {blockchainState}) log sockaddr (QueryMessage query)
     case query of
         -- This is pretty tragic as is indexing in a linked list
         BlockAtHeight n -> do
-            blocks <- atomically $ readTVar blockchainState >>= either (const $ return (FixedBlocks [])) readFixedBlocks
+            blocks <- atomically $ readFixedBlocks blockchainState
             case blocks of
                 FixedBlocks [] -> return (QueryAnswer NoBlockFound) 
                 FixedBlocks (b : bs) ->
@@ -311,17 +291,17 @@ catchUpToBlockchain :: ForkMaxDiff
                     -> IO ()
 catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) log = do
     blocks <- queryForBlocks
-    atomically $ readTVar blockchainState >>= \case
-        -- add received blocks into blockchain
-        Right blockchainState' -> updateWithBlocks blockchainState' blocks
-        -- Appending blocks to genesis block works by first finding any block that links to genesis
-        -- and then continuing like above
-        Left genesis -> case find (\b -> blockPreviousHash b == shash256 (Left genesis)) blocks of
-            Nothing -> return () -- can't do more, no block links to genesis
-            Just b  -> do
-                blockchainState' <- createBlockchainState' genesis b
-                writeTVar blockchainState (Right blockchainState')
-                updateWithBlocks blockchainState' blocks
+    atomically $ do
+        fixed <- readFixedBlocks blockchainState
+        utxoPool <- readUTXOPool blockchainState
+        lively <- readLivelyBlocks blockchainState
+        future <- readFutureBlocks blockchainState
+        let (utxoPool', fixed', lively', future') = foldl' update (utxoPool, fixed, lively, future) blocks
+        writeLivelyBlocks blockchainState lively'
+        writeFutureBlocks blockchainState future'
+        writeFixedBlocks blockchainState fixed'
+        writeUTXOPool blockchainState utxoPool' 
+
 
     where
         -- queries given address for blocks starting at height n and querying as long as we get valid answers.
@@ -335,13 +315,10 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
         queryForBlocks = do
             -- get the length of the blockchain we have, we ask for the next block
             n <- atomically $ do
-                readTVar blockchainState >>= \case
-                    Left genesis -> return 1
-                    Right blockchainState' -> do
-                        FixedBlocks fixed <-readFixedBlocks blockchainState'
-                        return $ 1 + case fixed of
-                                        []  -> 0
-                                        b:_ -> blockBlockHeight b
+                FixedBlocks fixed <-readFixedBlocks blockchainState
+                return $ 1 + case fixed of
+                                []  -> 0
+                                b:_ -> blockBlockHeight b
 
             -- get random selection of up to 8 addresses
             (PeersList peersList) <- readTVarIO peers
@@ -364,32 +341,6 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
                 BLockInsertedLinksToRoot lively'       -> (utxoPool, fixed, lively', future)
                 FutureBlock future'   -> (utxoPool, fixed, lively, future')
                 _                     -> (utxoPool, fixed, lively, future)
-
-        updateWithBlocks :: BlockchainState' -> [Block] -> STM ()
-        updateWithBlocks blockchainState' blocks = do
-            fixed <- readFixedBlocks blockchainState'
-            utxoPool <- readUTXOPool blockchainState'
-            lively <- readLivelyBlocks blockchainState'
-            future <- readFutureBlocks blockchainState'
-            let (utxoPool', fixed', lively', future') = foldl' update (utxoPool, fixed, lively, future) blocks
-            writeLivelyBlocks blockchainState' lively'
-            writeFutureBlocks blockchainState' future'
-            writeFixedBlocks blockchainState' fixed'
-            writeUTXOPool blockchainState' utxoPool' 
-
-    -- try to link a new block to one of the recent blocks
-    -- case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
-    --     BlockInserted fixed' lively' -> do
-    --         writeTVar recentBlocks lively'
-    --         writeTVar oldBlocks fixed'
-    --         return "Received block was inserted into chain."
-    --     FutureBlock future'   -> do 
-    --         writeTVar futureBlocks future'
-    --         return "Received block inserted into futures waiting list."
-    --     BlockAlreadyInserted -> return "Received block was already present in the chain."
-    --     BlockInvalid         -> return "Received block is invalid."
-    --     BlockNotLinked       -> return "Received block can't be linked."
-    
 
 -- move this somewhere more appriopriate (or don't)
 difficultyToTargetHash :: Int -> TargetHash
@@ -414,14 +365,7 @@ blocksEqual b1 b2 = shash256 (blockHeader b1) == shash256 (blockHeader b2)
 mining :: TargetHash -> AppState -> (String -> IO ()) -> IO ()
 mining targetHash (AppState {blockchainState, incomingTxs, peers}) log = forever $ do
     
-    -- we find the block to build on top of - last Block or Genesis if blockchain is empty
-    -- In both cases we stop mining when there's some new last block. waitingForChange is STM () returning in that event.
-    (lastblock, waitingForChange)  <- atomically $ do
-        readTVar blockchainState >>= \case
-            Left genesis -> return (Left genesis, waitingForGenesis)
-            Right blockchainState' -> do
-                lastblock <- getLastBlock <$> readLivelyBlocks blockchainState'
-                return (Right lastblock, waitingForNewBlock lastblock)
+    (lastblockRef, height)  <- atomically getLastBlockReference
 
     -- find pending Transaction's to include in the Block
     txs <- atomically $ do
@@ -429,31 +373,37 @@ mining targetHash (AppState {blockchainState, incomingTxs, peers}) log = forever
         if null txs then
             retry
         else
-            return txs            
+            return txs
 
-    doMining lastblock (toList txs) `race_` threadDelay 240000000 `race_` atomically waitingForChange
+    doMining lastblockRef height (toList txs) `race_` threadDelay 240000000 `race_` atomically (waitingForNewLastBlock lastblockRef)
 
     where
-        -- STM returning when BlockchainState changes its state from empty (Left Genesis) to non-empty (Right blabla) - no point in continuing mining then
-        waitingForGenesis =
-            readTVar blockchainState >>= \case 
-                Left _ -> retry
-                Right _ -> return ()
 
-        -- STM returning when the block at maximum height changes - no point in continuing mining then
-        waitingForNewBlock lastblock =
-            readTVar blockchainState >>= \case 
-                Left _ -> return () -- impossible
-                Right blockchainState' -> do
-                    newlastblock <- getLastBlock <$> readLivelyBlocks blockchainState'
-                    check (shash256 (blockHeader newlastblock) /= shash256 (blockHeader lastblock))
+        -- Calculates the reference to the furthest block in the blockchain - that is furthest leaf from LivelyBlocks 
+        -- or LivelyBlocks root if LivelyBlocks is empty (then it is Genesis reference)
+        getLastBlockReference :: STM (BlockReference, Integer)
+        getLastBlockReference = do
+            lively@LivelyBlocks {root, forest} <- readLivelyBlocks blockchainState
+            FixedBlocks fixed <- readFixedBlocks blockchainState
+            case getLastBlock lively of
+                -- LivelyBlocks is empty.
+                Nothing -> return (root, 
+                    case fixed of 
+                        [] -> 1
+                        b:bs -> 1 + blockBlockHeight b)
+                Just lastblock -> return (blockRef lastblock, 1 + blockBlockHeight lastblock)
 
-        doMining :: Either Genesis Block -> [Transaction] -> IO ()
-        doMining lastblock txs = do
+        waitingForNewLastBlock :: BlockReference -> STM ()
+        waitingForNewLastBlock oldRef = do
+            (ref, _) <- getLastBlockReference
+            check (ref == oldRef)
+
+        doMining :: BlockReference -> Integer -> [Transaction] -> IO ()
+        doMining lastblockRef height txs = do
             timestamp <- getCurrentTime
             -- keys for coinbase money
             keys <- generateKeys
-            let (ownedUTXO, block) = either mineAfterGenesis mineAfterBlock lastblock targetHash keys timestamp txs
+            let (ownedUTXO, block) = mineBlock targetHash keys timestamp txs height lastblockRef
 
             -- collect utxo in wallet:
             -- TODO
@@ -497,45 +447,42 @@ runNode = do
 
             case eitherPeers of
                 Left err    -> do print err
-                                  print "Couldn't open or parse peers file. Quits."
+                                  print "app: Couldn't open or parse peers file. Quits."
                 Right peers ->
                     case eitherBlockchain of
                         -- Nothing -> log "app: Couldn't parse blockchain file."
                         Left err -> do print err
-                                       print "Failed to load blockchain from file. Quits."
-                        Right (FixedBlocks []) -> do 
-                            log "app: Received empty fixed blocks."
+                                       print "app: Failed to load blockchain from file. Quits."
 
-                            run peers targetHash config log (Left (blockchainGenesis config))
-
-                        Right (FixedBlocks blocks@(b:_)) -> do
-                            blockchainState' <- BlockchainState' (blockchainGenesis config)
-                                    <$> newTVarIO (FixedBlocks blocks)
-                                    <*> newTVarIO (LivelyBlocks {root=blockRef b, forest=[]})
+                        Right fixed -> do
+                            blockchainState <- BlockchainState (blockchainGenesis config)
+                                    <$> newTVarIO fixed
+                                    <*> newTVarIO (LivelyBlocks {
+                                            root=case fixed of 
+                                                FixedBlocks [] -> shash256 (Left $ blockchainGenesis config)
+                                                FixedBlocks (b:bs) -> blockRef b, forest=[]})
                                     <*> newTVarIO (FutureBlocks Map.empty)
-                                    <*> newTVarIO (collectUTXOs Map.empty blocks)
+                                    <*> newTVarIO (collectUTXOs Map.empty (getFixedBlocks fixed))
 
-                            log "app: Received non-empty fixed blocks."
+                            log "app: Loaded fixed blocks."
                             
-                            run peers targetHash config log (Right blockchainState')
-
-    where
-        run peers targetHash config log blockchainState = do
-            appState <- AppState <$> newTVarIO blockchainState
-                                 <*> newTVarIO Seq.empty
-                                 <*> newTVarIO peers
+                            appState <-
+                                AppState blockchainState
+                                    <$> newTVarIO Seq.empty
+                                    <*> newTVarIO peers
             
-            -- TODO: catching up to blockchain
-            -- query for blocks after our last block
-            forkIO $ catchUpToBlockchain forkMaxDiff targetHash appState log
+                            -- TODO: catching up to blockchain
+                            -- query for blocks after our last block
+                            forkIO $ catchUpToBlockchain forkMaxDiff targetHash appState log
 
-            let mine = mining targetHash appState log 
+                            let mine = mining targetHash appState log 
 
-            let serverAddr = Address "localhost" (port config)
-            let runServer = server serverAddr log (serverHandler (handleMessage forkMaxDiff targetHash appState log) log)
+                            let serverAddr = Address "localhost" (port config)
+                            let runServer = server serverAddr log (serverHandler (handleMessage forkMaxDiff targetHash appState log) log)
 
-            concurrently_ mine runServer
+                            concurrently_ mine runServer
 
+    where            
 
         -- how to open only a single handle but also have it closed automaticaly?
         --                             name to log under, message to log

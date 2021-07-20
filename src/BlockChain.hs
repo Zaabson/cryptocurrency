@@ -19,8 +19,10 @@ import Control.Arrow ((&&&))
 import qualified Data.Set as Set
 
 -- Returns a leaf furthest from root, "arbitrary" one if there's a draw
-getLastBlock :: LivelyBlocks -> Block
-getLastBlock (LivelyBlocks {forest}) = snd $ foldl1' comp $ map (go 0) forest
+-- Nothing if LivelyBlocks empty.
+getLastBlock :: LivelyBlocks -> Maybe Block
+getLastBlock LivelyBlocks {forest=[]} = Nothing
+getLastBlock LivelyBlocks {forest} = Just . snd $ foldl1' comp $ map (go 0) forest
     where
         comp a@(n, _) (m, _) | n >= m = a
         comp _ b = b
