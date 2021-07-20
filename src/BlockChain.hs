@@ -139,11 +139,11 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
         if any ((== shash256 (blockHeader newblock)) . (\case Tree b _ -> shash256 (blockHeader b)) ) forest then
             BlockAlreadyInserted
         else
-            BLockInsertedLinksToRoot (lb {forest=Tree newblock [] : forest})
+            BLockInsertedLinksToRoot (lb {forest=newTree newblock : forest})
     else
         case break (isJust . snd) $ map (id &&& linkToChain newblock) forest of
             -- new block doesn't append to any known recent block
-            (_, []) -> FutureBlock . FutureBlocks $ Map.adjust (Set.insert newblock) (blockPreviousHash newblock) future
+            (_, []) -> FutureBlock . FutureBlocks $ Map.alter (maybe (Just $ Set.singleton newblock) (Just . Set.insert newblock)) (blockPreviousHash newblock) future
 
             -- new block doesn't append to any known recent block
             -- Nothing    -> FutureBlock . FutureBlocks $ Map.adjust (Set.insert newblock) (blockPreviousHash newblock) future
