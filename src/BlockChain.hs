@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric, DeriveFunctor, LambdaCase, NamedFieldPuns #-}
 module BlockChain where
 
 import Data.List (find, foldl1', foldl')
@@ -14,12 +14,13 @@ import Data.Functor ( (<&>) )
 import BlockValidation (UTXOPool, UTXO(..), txGetNewUTXOs, validateBlock)
 import qualified Data.Map as Map
 import BlockCreation (blockRef)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
+import Control.Arrow ((&&&))
 import qualified Data.Set as Set
 
 -- Returns a leaf furthest from root, "arbitrary" one if there's a draw
 getLastBlock :: LivelyBlocks -> Block
-getLastBlock (LivelyBlocks tree) = snd $ go 0 tree
+getLastBlock (LivelyBlocks {forest}) = snd $ foldl1' comp $ map (go 0) forest
     where
         comp a@(n, _) (m, _) | n >= m = a
         comp _ b = b
@@ -28,9 +29,28 @@ getLastBlock (LivelyBlocks tree) = snd $ go 0 tree
 
 -- TODO: Now pruning is unnecessarily run on the whole tree at every insert. This can be improved. 
 
+-- -- Forks significantly shorter (more than maxdiff shorter) than the longest one can be deleted.
+-- prune :: Integer -> Tree a -> Tree a
+-- prune maxdiff tree = pruneA marked
+
+--     where
+--         -- Mark every node with max depth among leafs in the subtree of a node  
+--         markWithHeight :: Integer -> Tree a -> Tree (Integer, a)
+--         markWithHeight d (Tree a []) = Tree (d, a) []
+--         markWithHeight d (Tree a ts) =
+--             let tt@( Tree (d0, _) _ : ts') = map (markWithHeight (d+1)) ts in
+--             let maxd = foldl' (\md (Tree (dd, _) _) -> max md dd) d0 ts' in
+--             Tree (maxd, a) tt
+
+--         marked@(Tree (maxHeight, _) _) = markWithHeight 0 tree
+
+--         -- Discard tree's that don't have any leafs at depth at least equal to (maxHeight - maxdiff).
+--         pruneA :: Tree (Integer, a) -> Tree a
+--         pruneA (Tree (_, a) ts) = Tree a (map pruneA . filter (\(Tree (d, _) _) -> d >= maxHeight - maxdiff) $ ts)
+
 -- Forks significantly shorter (more than maxdiff shorter) than the longest one can be deleted.
-prune :: Integer -> Tree a -> Tree a
-prune maxdiff tree = pruneA marked
+prune :: Integer -> [Tree a] -> [Tree a]
+prune maxdiff trees = map pruneA $ filter (\(Tree (d, _) _) -> d >= maxHeight - maxdiff) marked
 
     where
         -- Mark every node with max depth among leafs in the subtree of a node  
@@ -41,29 +61,45 @@ prune maxdiff tree = pruneA marked
             let maxd = foldl' (\md (Tree (dd, _) _) -> max md dd) d0 ts' in
             Tree (maxd, a) tt
 
-        marked@(Tree (maxHeight, _) _) = markWithHeight 0 tree
+        marked = map (markWithHeight 0) trees
+
+        maxHeight = foldl1' max $ map (\case Tree (h, _) _ -> h) marked
 
         -- Discard tree's that don't have any leafs at depth at least equal to (maxHeight - maxdiff).
         pruneA :: Tree (Integer, a) -> Tree a
         pruneA (Tree (_, a) ts) = Tree a (map pruneA . filter (\(Tree (d, _) _) -> d >= maxHeight - maxdiff) $ ts)
 
+
 newtype ForkMaxDiff = ForkMaxDiff Integer
 
 height :: Tree a -> Integer
 height (Tree _ []) = 0
-height (Tree _ ts) = foldl1' max . map height $ ts
+height (Tree _ ts) = 1 + foldl1' max (map height ts)
 
 -- If the tree starting from root looks like a linked list, then split the tree into the list part and the rest.
 -- The first element in the list is parent of the root of the tree.
 -- Height of a tree after this operation is at least maxdiff (TODO: think of a name instead of maxdiff).  
-fixBlocks :: Integer -> Tree a -> ([a], Tree a)
-fixBlocks maxdiff tree = go (height tree - maxdiff) [] tree
+fixBlocks :: Integer -> [Tree a] -> ([a], [Tree a])
+fixBlocks maxdiff trees = go (max (h - maxdiff) 0) [] trees
 
     where
+        
+        h = foldl1' max $ map height trees
+
         -- recurse on the tree collecting nodes, but collecting no more than given number
-        go 0 ls tree = (ls, tree)
-        go n ls (Tree a [t]) = go (n-1) (a : ls) t
-        go n ls tree = (ls, tree)
+        go 0 ls trees = (ls, trees)
+        go n ls [Tree a ts] = go (n-1) (a : ls) ts
+        go n ls trees = (ls, trees)
+
+-- fixBlocks :: Integer -> Tree a -> ([a], Tree a)
+-- fixBlocks maxdiff tree = go (height tree - maxdiff) [] tree
+
+--     where
+--         -- recurse on the tree collecting nodes, but collecting no more than given number
+--         go 0 ls tree = (ls, tree)
+--         go n ls (Tree a [t]) = go (n-1) (a : ls) t
+--         go n ls tree = (ls, tree)
+
 
 -- If a block can be appended to a block in LivelyBlocks, 
 -- then append it, prune branches and move some of the older blocks from Lively to Fixed
@@ -78,11 +114,12 @@ fixBlocks maxdiff tree = go (height tree - maxdiff) [] tree
 -- change type to encompass info on how it went
 
 data BlockchainUpdated
-    = BlockInserted FixedBlocks LivelyBlocks
+    = BlockInserted FixedBlocks LivelyBlocks UTXOPool
+    | BLockInsertedLinksToRoot LivelyBlocks
     | FutureBlock FutureBlocks
     | BlockAlreadyInserted
     | BlockInvalid
-    | BlockNotLinked
+-- | BlockNotLinked
 
 -- TODO: collect also blocks that don't connect to blockchain in some "future queue" 
 
@@ -96,31 +133,64 @@ updateWithBlock :: ForkMaxDiff                   -- constant specifying which fo
                  -> FixedBlocks                   -- older chain
                  -> FutureBlocks                  -- blocks that might link to blocks we haven't received yet
                  -> BlockchainUpdated                       -- blockchain updated with the block
-updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks tree) fb@(FixedBlocks fixed) (FutureBlocks future) =
-    case linkToChain newblock tree of
-        -- new block doesn't append to any known recent block
-        Nothing    -> FutureBlock . FutureBlocks $ Map.adjust (Set.insert newblock) (blockPreviousHash newblock) future
-        -- new block appends to blockchain
-        Just zipper ->
-            -- new block can be inserted into blockchain
-            if blockAlreadyInserted newblock zipper then
-                BlockAlreadyInserted
-            else  
-                -- calculate UTXOPool in a moment in blockchain where the new block appends 
-                let utxoPool'           = collectUTXOs utxoPool $ pathFromRoot zipper in
-                -- validate the block
-                let (valid, utxoPool'') = validateBlock target utxoPool' newblock   in 
+updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks {root ,forest}) fb@(FixedBlocks fixed) (FutureBlocks future) =
+    -- Does block link directly to root?
+    if blockPreviousHash newblock == root then
+        if any ((== shash256 (blockHeader newblock)) . (\case Tree b _ -> shash256 (blockHeader b)) ) forest then
+            BlockAlreadyInserted
+        else
+            BLockInsertedLinksToRoot (lb {forest=newTree newblock : forest})
+    else
+        case break (isJust . snd) $ map (id &&& linkToChain newblock) forest of
+            -- new block doesn't append to any known recent block
+            (_, []) -> FutureBlock . FutureBlocks $ Map.alter (maybe (Just $ Set.singleton newblock) (Just . Set.insert newblock)) (blockPreviousHash newblock) future
 
-                if valid then
-                    -- We append a new block with all the blocks waiting in the FutureBlocks that append to it.
-                    -- We recursively create a tree of blocks from FutureBlocks and put it into Livelyblocks in a place given by zipper.
-                    let newtree = insertFutures future utxoPool'' newblock in
-                    -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is is pruned and old blocks are moved to FixedBlocks.
-                    let (newfixed, lively) = fixBlocks maxdiff . prune maxdiff . fromZipper $ case zipper of
-                            Zipper ts pl -> Zipper (newtree : ts) pl
-                    in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks lively)
-                else
-                    BlockInvalid
+            -- new block doesn't append to any known recent block
+            -- Nothing    -> FutureBlock . FutureBlocks $ Map.adjust (Set.insert newblock) (blockPreviousHash newblock) future
+
+            -- new block appends to blockchain
+            (ts1, (_, Just zipper) : ts2) ->
+                if blockAlreadyInserted newblock zipper then
+                    BlockAlreadyInserted
+                else  
+                    -- calculate UTXOPool in a moment in blockchain where the new block appends 
+                    let utxoPool'           = collectUTXOs utxoPool $ pathFromRoot zipper in
+                    -- validate the block
+                    let (valid, utxoPool'') = validateBlock target utxoPool' newblock   in 
+
+                    if valid then
+                        -- We append a new block with all the blocks waiting in the FutureBlocks that append to it.
+                        -- We recursively create a tree of blocks from FutureBlocks and put it into Livelyblocks in a place given by zipper.
+                        let newtree = insertFutures future utxoPool'' newblock in
+                        -- we put the tree with inserted blocks back into the list
+                        let newforest = map fst ts1 ++ [fromZipper $ case zipper of Zipper ts pl -> Zipper (newtree : ts) pl] ++ map fst ts2 in
+                        -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is is pruned and old blocks are moved to FixedBlocks.
+                        let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
+                        in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (blockRef $ head newfixed) lively) (collectUTXOs utxoPool newfixed)
+                    else
+                        BlockInvalid
+
+            -- -- new block appends to blockchain
+            -- Just zipper ->
+            --     -- new block can be inserted into blockchain
+            --     if blockAlreadyInserted newblock zipper then
+            --         BlockAlreadyInserted
+            --     else  
+            --         -- calculate UTXOPool in a moment in blockchain where the new block appends 
+            --         let utxoPool'           = collectUTXOs utxoPool $ pathFromRoot zipper in
+            --         -- validate the block
+            --         let (valid, utxoPool'') = validateBlock target utxoPool' newblock   in 
+
+            --         if valid then
+            --             -- We append a new block with all the blocks waiting in the FutureBlocks that append to it.
+            --             -- We recursively create a tree of blocks from FutureBlocks and put it into Livelyblocks in a place given by zipper.
+            --             let newtree = insertFutures future utxoPool'' newblock in
+            --             -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is is pruned and old blocks are moved to FixedBlocks.
+            --             let (newfixed, lively) = fixBlocks maxdiff . prune maxdiff . fromZipper $ case zipper of
+            --                     Zipper ts pl -> Zipper (newtree : ts) pl
+            --             in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks lively) (collectUTXOs utxoPool newfixed)
+            --         else
+            --             BlockInvalid
 
     where
         
@@ -181,12 +251,19 @@ collectUTXOs = foldl' insert2map
                 (concatMap txGetNewUTXOs txs)
 
 
+-- Invariant:
+-- LivelyBlocks is a forest of blocks appending (directly or indirectly) to a given BlockReference.
+-- This way we account for the early states of appending to genesis.
+-- PreviousBlockReference's of the roots of the trees in forest equal "root".
+-- UTXOPool is set of txs of all the FixedBlocks.
+-- Blocks in LivelyBlocks are all uncertain.
+
 -- we will be appending new blocks, so let the order be:
 -- head fixedBlocks == newest block
 -- last fixedBlocks == first block after genesis
 newtype FixedBlocks = FixedBlocks {getFixedBlocks :: [Block]}
     deriving (Show, Generic)
-newtype LivelyBlocks = LivelyBlocks { getLivelyBlocks :: Tree Block}
+data LivelyBlocks = LivelyBlocks { root :: BlockReference, forest :: [Tree Block]}
     deriving (Show, Generic)
 
 -- Set uses our shash256 hashing for ordering. HashSet can't be used because Hashable instance demands hash with salt implementation.
@@ -199,8 +276,11 @@ instance FromJSON FixedBlocks
 instance ToJSON LivelyBlocks
 instance FromJSON LivelyBlocks
 
+-- note: LivelyBlocks is by definition non-empty.
 -- type not in use but this is blockchain: 
-data Blockchain = Blockchain FixedBlocks LivelyBlocks Genesis
+data Blockchain
+    = Blockchain FixedBlocks LivelyBlocks Genesis
+    | Empty Genesis
 
 -- Searches block tree looking for a Block that hashes to a matching previousHash,
 -- returns a zipper focused on this block - the new block should be inserted here as a child 
