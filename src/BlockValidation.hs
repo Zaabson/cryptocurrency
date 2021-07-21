@@ -170,4 +170,5 @@ validateBlock targetHash pool block@Block{..} = (txsOk && coinbaseOk && nonceOk,
     where (txsOk, newPool) = validateBlockTransactions pool block
           coinbaseOk       = validateCoinbaseMoney pool block
           nonceOk          = validateNonce targetHash blockHeader
-    
+
+-- validateFirstBlock :: TargetHash 

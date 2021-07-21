@@ -14,3 +14,6 @@
   - Wallet
   - Delete unneeded future blocks (can be done based on blockHeight)
   - Fix bug of reading/writing fixed and lively blocks in seperate atomic operations.
+  - Change catchUpToBlockchain to be called like log - there's a single queue of catchingUpToBlockchain calls. And really - was the idea of changing to HasConfig-style that undoable?
+  - Quiting app, saving blockchain, handling errors.
+  - Bug: Updating with block doesn't update UTXOPool - validating the invariant.

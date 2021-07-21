@@ -104,11 +104,15 @@ blockRef :: Block -> BlockReference
 blockRef = shash256 . Right . blockHeader
 
 -- convenience to mine a block appending to a given previous block
-mineAfterBlock :: TargetHash -> Keys -> UTCTime -> Block -> [Transaction] -> (OwnedUTXO, Block)
-mineAfterBlock target keys timestamp prevblock txs = 
-    mineBlock target keys timestamp txs (blockBlockHeight prevblock + 1) (blockRef prevblock)
+-- mineAfterBlock :: Block -> TargetHash -> Keys -> UTCTime -> [Transaction] -> (OwnedUTXO, Block)
+-- mineAfterBlock prevblock target keys timestamp txs = 
+--     mineBlock target keys timestamp txs (blockBlockHeight prevblock + 1) (blockRef prevblock)
 
--- not needed right?
+-- mineAfterGenesis :: Genesis -> TargetHash -> Keys -> UTCTime -> [Transaction] -> (OwnedUTXO, Block)
+-- mineAfterGenesis genesis target keys timestamp txs = 
+--     mineBlock target keys timestamp txs 1 (shash256 $ Left genesis)
+
+-- not needed right? <- nope
 -- First mined block doesn't have any transactions as there's no money to spend yet,
 -- it creates the first existing money in coinbase 
 -- mineFirst :: RawHash -> Keys -> UTCTime -> Genesis -> (OwnedUTXO, Block)
