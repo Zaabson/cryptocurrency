@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cc0321407db7457ca8e157494d88876e78e1cd09430bdf05e5936291d31285e5
+-- hash: ccbe74ef15379737122d65cf246f1297a911393e8829090a985195091a62b7ea
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -24,7 +24,6 @@ library
       Message
       Message_too_short_error
       Server
-      Wallet
   other-modules:
       Paths_Cryptocurrency
   hs-source-dirs:
@@ -41,6 +40,38 @@ library
     , containers
     , crypto-api
     , cryptohash-sha256
+    , deepseq
+    , mtl
+    , network
+    , optparse-applicative
+    , sampling
+    , stm
+    , time
+    , unordered-containers
+    , utf8-string
+  default-language: Haskell2010
+
+executable Cryptocurrency
+  main-is: Main.hs
+  other-modules:
+      Demo
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      app
+  build-depends:
+      Cryptocurrency
+    , DRBG
+    , RSA
+    , aeson
+    , async
+    , base
+    , binary
+    , bytestring
+    , bytestring-conversion
+    , containers
+    , crypto-api
+    , cryptohash-sha256
+    , deepseq
     , mtl
     , network
     , optparse-applicative
@@ -76,6 +107,7 @@ test-suite spec
     , containers
     , crypto-api
     , cryptohash-sha256
+    , deepseq
     , mtl
     , network
     , optparse-applicative

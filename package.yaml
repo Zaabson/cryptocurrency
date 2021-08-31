@@ -22,9 +22,16 @@ dependencies:
   - optparse-applicative
   - bytestring-conversion
   - sampling
+  - deepseq
 
 library:
   source-dirs: src
+
+executable:
+  main: Main.hs
+  source-dirs: app
+  dependencies:
+    - Cryptocurrency
 
 tests:
   spec:

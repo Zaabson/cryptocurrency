@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, RankNTypes #-}
 
 module Hashing where
 
@@ -8,6 +8,7 @@ import qualified Data.ByteString.UTF8 as UTF8
 import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
 import GHC.Generics
 import Crypto.Util (bs2i, i2bs_unsized)
+import Control.DeepSeq
 
 -- TODO: target hash based on average mining speed 
 -- targetHash :: RawHash
@@ -19,6 +20,9 @@ newtype TargetHash = TargetHash RawHash
 --        fromStrict is O(1) and toStrict is O(n)
 
 newtype HashOf a = Hash {getHash :: B.ByteString} deriving (Generic)
+
+-- instance NFData (forall a . HashOf a)
+instance NFData (HashOf a)
 
 instance Show (HashOf a) where
     show (Hash bytes) = "Hash " ++ UTF8.toString (B.take 4 bytes) ++ "..."
@@ -41,7 +45,9 @@ shash256 :: ToJSON a => a -> HashOf a
 shash256 = Hash . SHA256.hashlazy . encode
 
 -- type to be used instead of HashOf when the information about what was hashed can be lost.
-newtype RawHash = RawHash {rawHash :: B.ByteString} deriving (Eq, Ord)
+newtype RawHash = RawHash {rawHash :: B.ByteString} deriving (Eq, Ord, Generic)
+
+instance NFData RawHash
 
 instance Show RawHash where
     show (RawHash bytes) = "RawHash " ++ UTF8.toString (B.take 4 bytes) ++ "..."

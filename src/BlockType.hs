@@ -13,6 +13,7 @@ import Crypto.Util (bs2i, i2bs_unsized)
 import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves because the library was better documented
 -- Using RSA instead of elliptic curves because the library was better documented
 import Hashing (HashOf, RawHash, shash256)
+import Control.DeepSeq
 
 newtype Cent = Cent Integer deriving (Show, Generic, Num, Ord, Eq)  -- currency unit
 
@@ -94,6 +95,9 @@ data BlockHeader = BlockHeader {
 
 instance FromJSON BlockHeader
 instance ToJSON BlockHeader
+
+-- Needed to force hash crunching in mining.
+instance NFData BlockHeader
 
 data Block = Block {
     blockHeader :: BlockHeader,

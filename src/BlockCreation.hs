@@ -7,11 +7,13 @@ import qualified Data.ByteString as B
 import Data.Time (UTCTime, getCurrentTime)
 import Data.List (find)
 import Control.Arrow ((&&&))
+import Control.DeepSeq
 import Data.Maybe (fromJust)
+import Data.Bifunctor (second)
 import qualified Codec.Crypto.RSA as RSA
 import Crypto.Random (CryptoRandomGen)
 import BlockType (blockBlockHeight, TXID, Output(..), Transaction(..), Input,
-                  BlockReference, BlockHeader(..), Coinbase(..), Block(..), Cent(..), Genesis)
+                  BlockReference, BlockHeader(..), Coinbase(..), Block(..), Cent(..), Genesis, PublicAddress)
 import BlockValidation (calculateBlockReward, createSignedInput, UTXO(..), txGetNewUTXOs)
 
 -- Idea:
@@ -52,6 +54,38 @@ createTransaction utxos outs =
     let inputs = map (createSignedInputFromUTXO tx) utxos in 
     tx {inputs = inputs}
 
+-- returns a prefix of a list consisting of every element where the "predicate" returned True and the rest of the list,
+-- predicate accumulates helper state, last state for which predicate returned True is returned
+takeTillWithAccum :: (a -> b -> (a, Bool)) -> a -> [b] -> (a, [b], [b])
+takeTillWithAccum f s [] = (s, [], [])
+takeTillWithAccum f s (x:xs) = 
+    let (s', bl) = f s x
+    in if bl then
+        second (x :) $ takeTillWithAccum f s' xs
+    else
+        (s, [], x : xs) -- !! s not s'
+
+type SimpleWallet = [OwnedUTXO]
+
+
+createSendingTransaction :: SimpleWallet                 -- collection of OwnedUTXOs to be used as inputs
+                         -> Keys                         -- sender's keys to be used for change
+                         -> PublicAddress                -- recipient's public address
+                         -> Cent                         -- amount to be sent  
+                         -> Maybe (SimpleWallet, Transaction)   -- (unused UTXOs + change 2UTXO, created transaction)
+createSendingTransaction ownedUTXOs keys@(Keys pub priv) recipient amount =
+    case takeTillWithAccum (\s utxo -> 
+            let s' = howMuchCash utxo + s in 
+                (s', s' < amount)) 0 ownedUTXOs of 
+        (s, notEnough, []) -> Nothing
+        (s, notEnough, u:us) -> 
+            let change = Output {outputDenomination=s+howMuchCash u - amount, ownerPublicAddress=shash256 pub} in 
+            let tx = Transaction [] [Output {outputDenomination=amount, ownerPublicAddress=recipient}, 
+                                     change] in 
+            let tx = tx {inputs=map (createSignedInputFromUTXO tx) (u:notEnough)}
+            in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys : us, tx)
+
+
 keysLength :: Int
 keysLength = 1024
 
@@ -85,8 +119,9 @@ mineBlock :: TargetHash               -- target hash
           -> BlockReference        -- reference to previous block
           -> (OwnedUTXO, Block)    -- coinbase UTXO, new block
 mineBlock target keys@(Keys pub _) timestamp txs newBlockHeight prevblockref = 
-        (OwnedUTXO (UTXO coinbaseTxid 0 coinbaseOutput) keys,
-         Block blockhdr coinbase txs)
+        blockhdr `deepseq` 
+            (OwnedUTXO (UTXO coinbaseTxid 0 coinbaseOutput) keys,
+            Block blockhdr coinbase txs)
     where
         -- create a coinbase transaction spending all mining reward in a single output for given keys
         reward = calculateBlockReward newBlockHeight

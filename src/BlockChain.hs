@@ -14,7 +14,7 @@ import Data.Functor ( (<&>) )
 import BlockValidation (UTXOPool, UTXO(..), txGetNewUTXOs, validateBlock)
 import qualified Data.Map as Map
 import BlockCreation (blockRef)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust, isJust, maybe)
 import Control.Arrow ((&&&))
 import qualified Data.Set as Set
 
@@ -30,25 +30,6 @@ getLastBlock LivelyBlocks {forest} = Just . snd $ foldl1' comp $ map (go 0) fore
         go n (Tree _ ts)   =  foldl1' comp . map (go (n+1)) $ ts
 
 -- TODO: Now pruning is unnecessarily run on the whole tree at every insert. This can be improved. 
-
--- -- Forks significantly shorter (more than maxdiff shorter) than the longest one can be deleted.
--- prune :: Integer -> Tree a -> Tree a
--- prune maxdiff tree = pruneA marked
-
---     where
---         -- Mark every node with max depth among leafs in the subtree of a node  
---         markWithHeight :: Integer -> Tree a -> Tree (Integer, a)
---         markWithHeight d (Tree a []) = Tree (d, a) []
---         markWithHeight d (Tree a ts) =
---             let tt@( Tree (d0, _) _ : ts') = map (markWithHeight (d+1)) ts in
---             let maxd = foldl' (\md (Tree (dd, _) _) -> max md dd) d0 ts' in
---             Tree (maxd, a) tt
-
---         marked@(Tree (maxHeight, _) _) = markWithHeight 0 tree
-
---         -- Discard tree's that don't have any leafs at depth at least equal to (maxHeight - maxdiff).
---         pruneA :: Tree (Integer, a) -> Tree a
---         pruneA (Tree (_, a) ts) = Tree a (map pruneA . filter (\(Tree (d, _) _) -> d >= maxHeight - maxdiff) $ ts)
 
 -- Forks significantly shorter (more than maxdiff shorter) than the longest one can be deleted.
 prune :: Integer -> [Tree a] -> [Tree a]
@@ -123,7 +104,9 @@ data BlockchainUpdated
     | BlockInvalid
 -- | BlockNotLinked
 
--- TODO: collect also blocks that don't connect to blockchain in some "future queue" 
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x:xs) = Just x
 
 -- If a block can be appended to a block in LivelyBlocks, 
 -- then append it, prune branches and move some of the older blocks from Lively to Fixed
@@ -147,9 +130,6 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
             -- new block doesn't append to any known recent block
             (_, []) -> FutureBlock . FutureBlocks $ Map.alter (maybe (Just $ Set.singleton newblock) (Just . Set.insert newblock)) (blockPreviousHash newblock) future
 
-            -- new block doesn't append to any known recent block
-            -- Nothing    -> FutureBlock . FutureBlocks $ Map.adjust (Set.insert newblock) (blockPreviousHash newblock) future
-
             -- new block appends to blockchain
             (ts1, (_, Just zipper) : ts2) ->
                 if blockAlreadyInserted newblock zipper then
@@ -166,33 +146,11 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                         let newtree = insertFutures future utxoPool'' newblock in
                         -- we put the tree with inserted blocks back into the list
                         let newforest = map fst ts1 ++ [fromZipper $ case zipper of Zipper ts pl -> Zipper (newtree : ts) pl] ++ map fst ts2 in
-                        -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is is pruned and old blocks are moved to FixedBlocks.
+                        -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                         let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
-                        in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (blockRef $ head newfixed) lively) (collectUTXOs utxoPool newfixed)
+                        in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool newfixed)
                     else
                         BlockInvalid
-
-            -- -- new block appends to blockchain
-            -- Just zipper ->
-            --     -- new block can be inserted into blockchain
-            --     if blockAlreadyInserted newblock zipper then
-            --         BlockAlreadyInserted
-            --     else  
-            --         -- calculate UTXOPool in a moment in blockchain where the new block appends 
-            --         let utxoPool'           = collectUTXOs utxoPool $ pathFromRoot zipper in
-            --         -- validate the block
-            --         let (valid, utxoPool'') = validateBlock target utxoPool' newblock   in 
-
-            --         if valid then
-            --             -- We append a new block with all the blocks waiting in the FutureBlocks that append to it.
-            --             -- We recursively create a tree of blocks from FutureBlocks and put it into Livelyblocks in a place given by zipper.
-            --             let newtree = insertFutures future utxoPool'' newblock in
-            --             -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is is pruned and old blocks are moved to FixedBlocks.
-            --             let (newfixed, lively) = fixBlocks maxdiff . prune maxdiff . fromZipper $ case zipper of
-            --                     Zipper ts pl -> Zipper (newtree : ts) pl
-            --             in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks lively) (collectUTXOs utxoPool newfixed)
-            --         else
-            --             BlockInvalid
 
     where
         
@@ -215,23 +173,6 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                     ) [] blocks
                 
             Nothing -> Tree block []
-
-        -- -- We take zipper focused on newly added block. Check whether there's block waiting in the futures to be appended here.
-        -- -- If so - append it and append blocks from futures recursively. 
-        -- insertFutures :: Map.Map BlockReference (Set.Set Block)    -- future blocks, keys are blockPreviousHash'es
-        --               -> UTXOPool                        -- utxoPool up to the focused block in the Zipper including
-        --               -> Zipper Block                    -- zipper focused on newly added block
-        --               -> Zipper Block                    -- zipper focused on last block that could be added 
-        -- insertFutures futures utxoPool zipper = case Map.lookup (blockRef $ getElem zipper) futures of
-        --     Just blocks ->
-
-        --         let (valid, utxoPool') = validateBlock target utxoPool block in
-        --         if valid then
-        --             insertFutures futures utxoPool' (fromJust . goDown $ insertHere block zipper)
-        --         else
-        --             zipper
-    
-        --     Nothing -> zipper
 
         pathFromRootA :: Place Block -> [Block]-> [Block]
         pathFromRootA (Root bl) acc               = bl : acc
@@ -278,11 +219,9 @@ instance FromJSON FixedBlocks
 instance ToJSON LivelyBlocks
 instance FromJSON LivelyBlocks
 
--- note: LivelyBlocks is by definition non-empty.
 -- type not in use but this is blockchain: 
 data Blockchain
     = Blockchain FixedBlocks LivelyBlocks Genesis
-    | Empty Genesis
 
 -- Searches block tree looking for a Block that hashes to a matching previousHash,
 -- returns a zipper focused on this block - the new block should be inserted here as a child 

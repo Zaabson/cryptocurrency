@@ -2,8 +2,8 @@
 module App where
 
 import Server (Address(..), server, HandlerFunc)
-import BlockType (Block (blockHeader), Transaction, BlockHeader (timestamp), blockBlockHeight, Genesis (Genesis), blockPreviousHash, BlockReference)
-import System.IO (withBinaryFile, IOMode (ReadMode, AppendMode), hPutStr, withFile, Handle)
+import BlockType (Block (blockHeader), Transaction, BlockHeader (timestamp), blockBlockHeight, Genesis (Genesis), blockPreviousHash, BlockReference, Cent (Cent), PublicAddress)
+import System.IO (withBinaryFile, IOMode (ReadMode, AppendMode), hPutStr, withFile, Handle, hPutStrLn)
 import Data.Aeson (encode, decode, encodeFile, FromJSON, ToJSON, decodeFileStrict, eitherDecodeFileStrict)
 import qualified Data.ByteString.Lazy as LazyB (hGetContents)
 import Control.Concurrent.STM (TVar, STM, modifyTVar', stateTVar, newTVarIO, readTVarIO, newTVar, readTVar, atomically, writeTVar, modifyTVar, retry, check, orElse)
@@ -15,23 +15,26 @@ import Options.Applicative
 import Data.Maybe (fromJust)
 import Control.Concurrent (MVar, forkIO, withMVar, newMVar, threadDelay)
 import Control.Monad (void, forever, liftM2, when, join, liftM3)
-import Data.Time (getCurrentTime, hoursToTimeZone, formatTime, defaultTimeLocale)
+import Control.DeepSeq
+import Data.Time (getCurrentTime, hoursToTimeZone, formatTime, defaultTimeLocale, getZonedTime)
 import Network.Socket (ServiceName, SockAddr, Family (AF_802))
 import Message (Message (..), Answer(..), Query (BlockAtHeight), QueryResult (NoBlockFound, RequestedBlock))
-import Control.Exception (onException)
+import Control.Exception (onException, evaluate)
 import Hashing (TargetHash(TargetHash), RawHash(RawHash), shash256)
 import qualified Data.ByteString as B
 import Control.Monad.Reader (ReaderT)
-import BlockValidation (UTXOPool, UTXO (UTXO), validateBlock)
+import BlockValidation (UTXOPool, UTXO (UTXO), validateBlock, validTransaction)
 import qualified Data.Map as Map
-import BlockCreation (Keys(Keys), OwnedUTXO (OwnedUTXO), mineBlock, blockRef)
+import BlockCreation (Keys(Keys), OwnedUTXO (OwnedUTXO), mineBlock, blockRef, SimpleWallet, createSendingTransaction)
 import qualified Codec.Crypto.RSA as RSA
 import Crypto.Random.DRBG (newGenIO)
 import Data.Foldable (toList, find, Foldable (foldl'))
-import Control.Concurrent.Async (async, race, waitEitherCancel, waitSTM, race_, forConcurrently_, forConcurrently, concurrently_)
+import Control.Concurrent.Async (async, race, waitEitherCancel, waitSTM, race_, forConcurrently_, forConcurrently, concurrently_, Async, waitBoth)
 import qualified Crypto.Random.DRBG as DRBG
 import Client (sendToAll, send, sendAndReceive)
 import Numeric.Sampling (sampleIO)
+import Control.Monad.STM (check)
+import GHC.Conc.Sync (readTVarIO)
 
 -- data MiningMode
 --     = Mining
@@ -47,8 +50,8 @@ sendMsg msg = send (encode msg)
 sendMsgToAll :: Message -> [Address] -> IO ()
 sendMsgToAll msg = sendToAll (encode msg) 
 
-sendAndReceiveMsg :: Message -> Address -> (Maybe Answer -> IO a) -> IO a
-sendAndReceiveMsg msg address k = sendAndReceive (encode msg) address (k . (>>=  decode))
+sendAndReceiveMsg ::  Message -> (Maybe Answer -> IO a) -> Address -> IO a
+sendAndReceiveMsg msg k address = sendAndReceive (encode msg) address (k . (>>=  decode))
 
 -- saveBlockChain == Data.Aeson.encodeFile
 -- loadBlockchain == Data.Aeson.decodeFileStrict
@@ -150,7 +153,8 @@ writeUTXOPool (BlockchainState _ _ _ _ utxoPool) = writeTVar utxoPool
 data AppState = AppState {
     blockchainState :: BlockchainState,   
     incomingTxs  :: TVar (Seq.Seq Transaction),
-    peers        :: TVar PeersList
+    peers        :: TVar PeersList,
+    minerWallet  :: TVar SimpleWallet 
     }
 
 appendTransaction :: Transaction -> AppState -> STM ()
@@ -164,7 +168,7 @@ appendTransaction txs AppState {..} = modifyTVar' incomingTxs (Seq.|> txs)
 --     else
 --         (Nothing, txs)
 
-data LoggingMode = ToFile FilePath | ToStdin deriving Generic
+data LoggingMode = ToFile FilePath | ToStdin | Silent deriving Generic
 instance ToJSON LoggingMode
 instance FromJSON LoggingMode
 
@@ -175,7 +179,8 @@ data Config = Config {
         targetDifficulty   :: Int,
         loggingMode :: LoggingMode,
         port        :: ServiceName,
-        blockchainGenesis     :: Genesis
+        blockchainGenesis     :: Genesis,
+        minerWaitForTxs :: Bool
     } deriving (Generic)
 
 instance ToJSON Config
@@ -203,10 +208,10 @@ createBlockchainState' genesis block =
                              <*> newTVar (LivelyBlocks {root=shash256 (Left genesis), forest=[newTree block]})
                              <*> newTVar (FutureBlocks Map.empty)
                              <*> newTVar Map.empty
-     
+
 -- TODO: Add to config.
 forkMaxDiff :: ForkMaxDiff
-forkMaxDiff = ForkMaxDiff 2  
+forkMaxDiff = ForkMaxDiff 2
 
 handleMessage :: ForkMaxDiff
               -> TargetHash
@@ -239,7 +244,7 @@ handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) l
                     log "handler: Received block was inserted into chain."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
                     PeersList addresses <- readTVarIO peers
-                    forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())            
+                    forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
             FutureBlock future'   -> do
                 writeFutureBlocks blockchainState future'
                 return $ do 
@@ -254,16 +259,22 @@ handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) l
                     log "handler: Inserted block linking to genesis."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
                     PeersList addresses <- readTVarIO peers
-                    forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())
+                    forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
                             
     return ReceivedBlock
 
 
-handleMessage _ _ appSt log sockaddr (TransactionMessage tx) = do 
+handleMessage _ _ appSt@AppState {blockchainState} log sockaddr (TransactionMessage tx) = do 
     -- append new transaction to queue
-    forkIO $ do
-        atomically $ appendTransaction tx appSt
-        log "handler: Received new transaction."
+    -- Transactions are initially validated against utxo's from known FixedBlocks.
+    -- TODO: This should be updated to validate for state at the tip of LivelyBlocks.
+    join . atomically $ do
+            utxoPool <- readUTXOPool blockchainState
+            if validTransaction utxoPool tx then do
+                appendTransaction tx appSt
+                return $ log "handler: Received new transaction."
+            else 
+                return $ log "handler: Didn't bother with transaction."
 
     return ReceivedTransaction
 
@@ -307,9 +318,9 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
         -- queries given address for blocks starting at height n and querying as long as we get valid answers.
         keepQuerying :: Integer -> Address -> IO [Block]
         keepQuerying n address = do
-            sendAndReceiveMsg (QueryMessage $ BlockAtHeight n) address $ \case
+            sendAndReceiveMsg (QueryMessage $ BlockAtHeight n) (\case
                 Just (QueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
-                _ -> return []
+                _ -> return [] ) address
         
         queryForBlocks :: IO [Block]
         queryForBlocks = do
@@ -320,9 +331,9 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
                                 []  -> 0
                                 b:_ -> blockBlockHeight b
 
-            -- get random selection of up to 8 addresses
+            -- get random selection of 1 to 8 addresses
             (PeersList peersList) <- readTVarIO peers
-            maddresses <- sampleIO (min 8 (length peersList)) peersList
+            maddresses <- sampleIO (max 1 (min 8 (length peersList))) peersList
 
             case maddresses of
                 Nothing -> do
@@ -362,20 +373,31 @@ blocksEqual b1 b2 = shash256 (blockHeader b1) == shash256 (blockHeader b2)
 
 -- This needs some more thinking. After mining a block few things should be done atomic? maybe not needed 
 -- Also combining those waits will be tricky 
-mining :: TargetHash -> AppState -> (String -> IO ()) -> IO ()
-mining targetHash (AppState {blockchainState, incomingTxs, peers}) log = forever $ do
+
+mining :: TargetHash        -- Need hash ∈ [0, targetHash] 
+       -> AppState
+       -> Bool              -- Do we wait for transaction or produce coinbase-only blocks
+       -> (String -> IO ()) -- Logging function
+       -> IO ()
+mining targetHash (AppState {blockchainState, incomingTxs, peers}) waitForTxs log = forever $ do
     
     (lastblockRef, height)  <- atomically getLastBlockReference
 
     -- find pending Transaction's to include in the Block
-    txs <- atomically $ do
-        txs <- readTVar incomingTxs
-        if null txs then
-            retry
+    txs <- 
+        if waitForTxs then
+            atomically $ do
+                txs <- readTVar incomingTxs
+                if null txs then
+                    retry
+                else
+                    return txs
         else
-            return txs
+            readTVarIO incomingTxs
 
-    doMining lastblockRef height (toList txs) `race_` threadDelay 240000000 `race_` atomically (waitingForNewLastBlock lastblockRef)
+    -- TODO: waitingForNewLastBlock returns too often, suss
+    -- doMining lastblockRef height (toList txs) `race_` threadDelay 240000000 `race_` atomically (waitingForNewLastBlock lastblockRef)
+    doMining lastblockRef height (toList txs) `race_` threadDelay 240000000
 
     where
 
@@ -403,16 +425,83 @@ mining targetHash (AppState {blockchainState, incomingTxs, peers}) log = forever
             timestamp <- getCurrentTime
             -- keys for coinbase money
             keys <- generateKeys
+
+            -- mine a block
             let (ownedUTXO, block) = mineBlock targetHash keys timestamp txs height lastblockRef
+
+            -- log "Start mining."
+
+            -- forces hash crunching
+            evaluate . force $ blockHeader block 
 
             -- collect utxo in wallet:
             -- TODO
             log "We mined a coin!"
             -- _ ownedUTXO
 
+            -- Put the newly mined block into blockchain.
+            -- Broadcast the block to others.
+            join . atomically $ do
+                -- Note that this atomical operation is time-consuming.
+                lively   <- readLivelyBlocks blockchainState
+                fixed    <- readFixedBlocks blockchainState
+                future   <- readFutureBlocks blockchainState
+                utxoPool <- readUTXOPool blockchainState
+
+                case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
+                    BlockInserted fixed' lively' utxoPool' -> do
+                        writeLivelyBlocks blockchainState lively'
+                        writeFixedBlocks blockchainState fixed'
+                        writeUTXOPool blockchainState utxoPool'
+                        return $ do
+                            -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
+                            PeersList addresses <- readTVarIO peers
+                            forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                    BLockInsertedLinksToRoot lively' -> do
+                        writeLivelyBlocks blockchainState lively'
+                        return $ do
+                            -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
+                            PeersList addresses <- readTVarIO peers
+                            forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                    _ -> return $ log "Warning! Mined block is fucked up."
+
             --  broadcast block
-            (PeersList addresses) <- readTVarIO peers
-            forConcurrently_ addresses $ \address -> sendAndReceiveMsg (BlockMessage block) address (const $ return ())
+            -- (PeersList addresses) <- readTVarIO peers
+            -- forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+
+
+-- Returns when transaction appears in blockchain.
+broadcastTransaction :: AppState -> Transaction -> IO ()
+broadcastTransaction (AppState {peers, blockchainState}) tx = do
+    PeersList peers <- readTVarIO peers
+    forConcurrently_ peers $ sendAndReceiveMsg (TransactionMessage tx) (const (return ()))
+    let txid = shash256 (Right tx)
+    -- keep checking whether at least first output from transaction appears in UTXOPool
+    atomically $ do
+        utxoPool <- readUTXOPool blockchainState
+        check (Map.member (txid, 0) utxoPool)
+
+makeTransaction :: AppState -> PublicAddress -> Cent -> IO (Maybe Transaction)
+makeTransaction (AppState {minerWallet}) recipient amount = do
+    keys <- generateKeys
+    atomically $ do
+        wallet <- readTVar minerWallet
+        case createSendingTransaction wallet keys recipient amount of 
+            Nothing -> return Nothing  
+            Just (wallet', tx) -> do
+                writeTVar minerWallet wallet'
+                return (Just tx)
+
+        
+serverHandler :: (SockAddr -> Message -> IO Answer) -> (String -> IO ()) -> HandlerFunc
+serverHandler handler log sockAddr msgbytes = do
+    case decode msgbytes of 
+        Nothing -> do 
+            log "handler: Unable to parse message."
+            return $ encode MessageParseError
+        Just msg -> do
+            answer <-  handler sockAddr msg
+            return $ encode answer
 
 
 -- TODO: Who creates genesis block? is it part of running a node? 
@@ -421,89 +510,99 @@ mining targetHash (AppState {blockchainState, incomingTxs, peers}) log = forever
 -- Recalculate UTXOPool on start or load it from file?
 -- TODO: Load it ^ from file.
 
-runNode :: IO ()
-runNode = do
-    CommandOptions configFilepath <- execParser parseCommand
-    eitherConfig <- eitherDecodeFileStrict configFilepath
-    case eitherConfig of
-        Left error -> do
-            print error
-            print "Unable to read config file. Quits."
-        Right config -> do
-        -- config <- fromJust <$> decodeFileStrict configFilepath -- unrecovarable errors here
+-- AppState, running main (mining, server), logging function
+newtype RunningApp = RunningApp (AppState, Async (), String -> IO ())
+
+runNode :: Config -> IO (Maybe RunningApp)
+runNode config = do
+    -- make logging function
+    loggerlock <- newMVar ()
+    let log = logger (loggingMode config) loggerlock
+
+    let targetHash = difficultyToTargetHash $ targetDifficulty config
+
+    -- TODO: optional cmd arg to load state from save, otherwise only loads
+
+    -- mpeers      <- loadData (peersFilepath config)      `onException` log "app: Failed to load peers from file. Exits."
+    -- mblockchain <- loadData (blockchainFilepath config) `onException` log "app: Failed to load blockchain from file. Exits."
+    eitherPeers <- eitherDecodeFileStrict (peersFilepath config)
+    eitherBlockchain <- eitherDecodeFileStrict (blockchainFilepath config)
+
+    case eitherPeers of
+        Left err    -> do
+            -- TODO: Idea: change return type to Either and let user handle different errors
+            log err
+            log "app: Couldn't open or parse peers file. Quits."
+            return Nothing
+        Right peers ->
+            case eitherBlockchain of
+                -- Nothing -> log "app: Couldn't parse blockchain file."
+                Left err -> do
+                    log err
+                    log "app: Failed to load blockchain from file. Quits."
+                    return Nothing
+                Right fixed -> do
+                    blockchainState <- BlockchainState (blockchainGenesis config)
+                            <$> newTVarIO fixed
+                            <*> newTVarIO (LivelyBlocks {
+                                    root=case fixed of 
+                                        FixedBlocks [] -> shash256 (Left $ blockchainGenesis config)
+                                        FixedBlocks (b:bs) -> blockRef b, forest=[]})
+                            <*> newTVarIO (FutureBlocks Map.empty)
+                            <*> newTVarIO (collectUTXOs Map.empty (getFixedBlocks fixed))
+
+                    log "app: Loaded fixed blocks."
+                    
+                    appState <-
+                        AppState blockchainState
+                            <$> newTVarIO Seq.empty
+                            <*> newTVarIO peers
+                            <*> newTVarIO []
+    
+                    -- TODO: catching up to  blockchain
+                    -- query for blocks after our last block
+                    forkIO $ catchUpToBlockchain forkMaxDiff targetHash appState log
+
+                    let mine = mining targetHash appState (minerWaitForTxs config) log 
+
+                    let serverAddr = Address "localhost" (port config)
+                    let runServer = server serverAddr log (serverHandler (handleMessage forkMaxDiff targetHash appState log) log)
             
-            -- make logging function
-            loggerlock <- newMVar ()
-            let log = logger (loggingMode config) loggerlock
+                    -- forkIO runServer
+                    -- forkIO mine
+                    main <- async $ concurrently_ mine runServer
 
-            let targetHash = difficultyToTargetHash $ targetDifficulty config
-
-            -- TODO: optional cmd arg to load state from save, otherwise only loads
-
-            -- mpeers      <- loadData (peersFilepath config)      `onException` log "app: Failed to load peers from file. Exits."
-            -- mblockchain <- loadData (blockchainFilepath config) `onException` log "app: Failed to load blockchain from file. Exits."
-            eitherPeers <- eitherDecodeFileStrict (peersFilepath config)
-            eitherBlockchain <- eitherDecodeFileStrict (blockchainFilepath config)
-
-            case eitherPeers of
-                Left err    -> do print err
-                                  print "app: Couldn't open or parse peers file. Quits."
-                Right peers ->
-                    case eitherBlockchain of
-                        -- Nothing -> log "app: Couldn't parse blockchain file."
-                        Left err -> do print err
-                                       print "app: Failed to load blockchain from file. Quits."
-
-                        Right fixed -> do
-                            blockchainState <- BlockchainState (blockchainGenesis config)
-                                    <$> newTVarIO fixed
-                                    <*> newTVarIO (LivelyBlocks {
-                                            root=case fixed of 
-                                                FixedBlocks [] -> shash256 (Left $ blockchainGenesis config)
-                                                FixedBlocks (b:bs) -> blockRef b, forest=[]})
-                                    <*> newTVarIO (FutureBlocks Map.empty)
-                                    <*> newTVarIO (collectUTXOs Map.empty (getFixedBlocks fixed))
-
-                            log "app: Loaded fixed blocks."
-                            
-                            appState <-
-                                AppState blockchainState
-                                    <$> newTVarIO Seq.empty
-                                    <*> newTVarIO peers
-            
-                            -- TODO: catching up to blockchain
-                            -- query for blocks after our last block
-                            forkIO $ catchUpToBlockchain forkMaxDiff targetHash appState log
-
-                            let mine = mining targetHash appState log 
-
-                            let serverAddr = Address "localhost" (port config)
-                            let runServer = server serverAddr log (serverHandler (handleMessage forkMaxDiff targetHash appState log) log)
-
-                            concurrently_ mine runServer
+                    return (Just $ RunningApp (appState, main, log))
 
     where            
 
         -- how to open only a single handle but also have it closed automaticaly?
         --                             name to log under, message to log
         logger :: LoggingMode -> MVar () -> String -> IO ()
+        logger Silent _ _ = return ()
         logger mode lock str       = void $ forkIO $ withMVar lock (\a -> do
-            time <- getCurrentTime
-            let timeinfo = formatTime defaultTimeLocale "%z+0200" time -- timezonehoursToTimeZone 2
+            time <- getZonedTime
+            -- TODO: fix time not displaying properly
+            let timeinfo = formatTime defaultTimeLocale "%T" time
             let msg =  timeinfo ++ ": " ++ str
             case mode of 
-                ToStdin     -> putStr msg
-                ToFile path -> withFile path AppendMode (`hPutStr` msg)
+                ToStdin     -> putStrLn msg
+                ToFile path -> withFile path AppendMode (`hPutStrLn` msg)
             return a)
-        
-        serverHandler :: (SockAddr -> Message -> IO Answer) -> (String -> IO ()) -> HandlerFunc
-        serverHandler handler log sockAddr msgbytes = do
-            case decode msgbytes of 
-                Nothing -> do 
-                    log "handler: Unable to parse message."
-                    return $ encode MessageParseError
-                Just msg -> do
-                    answer <-  handler sockAddr msg
-                    return $ encode answer
-            
 
+
+-- log :: RunningApp -> String ->  IO ()
+-- log (RunningApp (appSt, _, log)) = log 
+
+-- Launch app to do stuff and quit
+withAppDoAndQuit :: Config -> (AppState -> (String -> IO ()) -> IO a) -> IO (Maybe a)
+withAppDoAndQuit = undefined
+
+-- Launch app, do stuff and live the app running.
+withAppDo :: Config -> (AppState -> (String -> IO ()) -> IO ()) -> IO ()
+withAppDo config action = runNode config >>= \case
+    Nothing -> -- error is logged in runnode already
+        return ()
+    Just (RunningApp (appSt, main, log)) -> do
+        action <- async $ action appSt log 
+        void $ waitBoth action main

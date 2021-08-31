@@ -8,7 +8,6 @@
   - ReaderT Env IO and HasConfig style constraints on Env  <- nope!
   - Strategy - have all the code that does stuff ready and only then refactor, knowing better what refactor makes sense
   - Some things are recalculated at need (utxopool for nodes in LivelyBlocks). Consider keeping this in memory.
-  - Oh! We forgot UTXOPool as part of AppState (possibly).
   - Implement node querying functionality. For now make it dumb and quick only to be able to finaly run node. 
     Also improving it doesn't make sense before blockchain is moved out of runtime and into some database.
   - Wallet
@@ -16,4 +15,11 @@
   - Fix bug of reading/writing fixed and lively blocks in seperate atomic operations.
   - Change catchUpToBlockchain to be called like log - there's a single queue of catchingUpToBlockchain calls. And really - was the idea of changing to HasConfig-style that undoable?
   - Quiting app, saving blockchain, handling errors.
-  - Bug: Updating with block doesn't update UTXOPool - validating the invariant.
+  - Wallet should monitor transaction validations.
+  - SimpleWallet
+  - Update broadcastTransaction to keep resending untill it's in blockchain.
+  - Consider no mining mode and two "withAppDo" functions: one that does stuff and closes the app and second that doesn't.
+  - More fine grained mining difficulty (2 is under second, 3 is few minutes, jump by a factor of 256).
+  - Start with random nonce, so that we ommit unlucky cases of first fitting nonce being very big and not able to be found in 4 minutes.
+  - Basic transaction validation on receiveings!
+  - System of monitoring peers activity and updating contact list.
