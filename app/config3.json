@@ -1,0 +1,8 @@
+{
+    "blockchainFilepath" : "../app/fixed_blocks.json",
+    "peersFilepath" : "../app/peers.json",
+    "targetDifficulty" : 2,
+    "loggingMode" : {"tag" : "ToStdin"},
+    "port" : "49155",
+    "blockchainGenesis" : "Złoty"
+}
