@@ -7,8 +7,8 @@ import Hashing (shash256)
 import Control.Concurrent.Async (wait, Async)
 
 config = Config {
-    blockchainFilepath = "fixed_blocks.json",
-    peersFilepath = "peers.json",
+    blockchainFilepath = "data/fixed_blocks.json",
+    peersFilepath = "data/peers.json",
     targetDifficulty   = 3,
     loggingMode = ToStdin,
     port        = "49155",
