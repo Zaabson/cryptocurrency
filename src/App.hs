@@ -16,9 +16,9 @@ import Data.Maybe (fromJust)
 import Control.Concurrent (MVar, forkIO, withMVar, newMVar, threadDelay)
 import Control.Monad (void, forever, liftM2, when, join, liftM3)
 import Control.DeepSeq
-import Data.Time (getCurrentTime, hoursToTimeZone, formatTime, defaultTimeLocale, getZonedTime)
+import Data.Time (getCurrentTime, hoursToTimeZone, formatTime, defaultTimeLocale, getZonedTime, UTCTime, ZonedTime, NominalDiffTime, diffUTCTime, zonedTimeToUTC)
 import Network.Socket (ServiceName, SockAddr, Family (AF_802))
-import Message (Message (..), Answer(..), Query (BlockAtHeight), QueryResult (NoBlockFound, RequestedBlock))
+import Message (Message (..), Answer(..), Query (BlockAtHeight), QueryResult (NoBlockFound, RequestedBlock), answerEq)
 import Control.Exception (onException, evaluate)
 import Hashing (TargetHash(TargetHash), RawHash(RawHash), shash256)
 import qualified Data.ByteString as B
@@ -35,6 +35,8 @@ import Client (sendToAll, send, sendAndReceive)
 import Numeric.Sampling (sampleIO)
 import Control.Monad.STM (check)
 import GHC.Conc.Sync (readTVarIO)
+import Data.Time.Clock (getCurrentTime)
+import Data.Aeson.Types (FromJSON)
 
 -- data MiningMode
 --     = Mining
@@ -104,11 +106,35 @@ instance FromJSON Save
 --     tincomingTxs <- newTVar Seq.empty
 --     return $ AppState tlively toldBlocks tincomingTxs
 
-newtype PeersList = PeersList [Address]
-    deriving (Show, Generic)
+data Status
+    = Active
+    | DidntReact UTCTime
+    deriving (Generic)
 
-instance ToJSON PeersList
-instance FromJSON PeersList
+instance FromJSON Status 
+instance ToJSON Status
+
+-- newtype Peer = Peer Address Status
+
+newtype PeersSet = PeersSet (Map.Map Address Status)
+    deriving (Generic)
+
+instance FromJSON PeersSet 
+instance ToJSON PeersSet
+
+getAddresses :: PeersSet -> [Address]
+getAddresses (PeersSet peers) = Map.keys peers 
+
+getPeers :: PeersSet -> [(Address, Status)]
+getPeers (PeersSet peers) = Map.assocs peers
+
+-- newtype PeersList = PeersList [Address]
+--     deriving (Show, Generic)
+
+-- instance ToJSON PeersList
+-- instance FromJSON PeersList
+
+-- updateStatus :: 
 
 
 -- LivelyBlocks by definition contains at least one block, so we differentiate between the empty case.
@@ -153,7 +179,7 @@ writeUTXOPool (BlockchainState _ _ _ _ utxoPool) = writeTVar utxoPool
 data AppState = AppState {
     blockchainState :: BlockchainState,   
     incomingTxs  :: TVar (Seq.Seq Transaction),
-    peers        :: TVar PeersList,
+    peers        :: TVar PeersSet,
     minerWallet  :: TVar SimpleWallet 
     }
 
@@ -213,6 +239,35 @@ createBlockchainState' genesis block =
 forkMaxDiff :: ForkMaxDiff
 forkMaxDiff = ForkMaxDiff 2
 
+-- diffZonedTime :: ZonedTime -> ZonedTime -> NominalDiffTime
+-- diffZonedTime time1 time2 = diffUTCTime (zonedTimeToUTC time1) (zonedTimeToUTC time2)
+
+-- To be used after broadcasting message to update PeersSet based on activity of the addressee's. 
+expectAnswer :: TVar PeersSet  -- collection of addresses and their activity status 
+             -> Address        -- addressee 
+             -> Answer         -- the answer we expect
+             -> Maybe Answer   -- the answer we got
+             -> IO ()          -- updating of PeersSet according to address activity status
+expectAnswer peers address expected answer = do
+    time <- getCurrentTime
+    atomically $ modifyTVar' peers (\(PeersSet peers) -> 
+        PeersSet $ Map.alter 
+            (case answer of
+                Nothing -> didntAnswer time
+                Just answer | not (answerEq expected answer) -> didntAnswer time
+                Just answer -> didAnswer)
+            address peers)
+    where
+        didntAnswer :: UTCTime -> Maybe Status -> Maybe Status 
+        didntAnswer time (Just Active)                = Just (DidntReact time)
+        didntAnswer time (Just (DidntReact lasttime)) =
+            if diffUTCTime time lasttime > 24 * 60 * 60 then Nothing else Just (DidntReact time)
+        didntAnswer time Nothing                    = Nothing
+
+        didAnswer :: Maybe Status -> Maybe Status
+        didAnswer = const (Just Active)
+
+
 handleMessage :: ForkMaxDiff
               -> TargetHash
               -> AppState
@@ -243,8 +298,9 @@ handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) l
                 return $ do
                     log "handler: Received block was inserted into chain."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                    PeersList addresses <- readTVarIO peers
-                    forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                    addresses <- getAddresses <$> readTVarIO peers
+                    forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
+                    -- forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
             FutureBlock future'   -> do
                 writeFutureBlocks blockchainState future'
                 return $ do 
@@ -258,8 +314,8 @@ handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) l
                 return $ do
                     log "handler: Inserted block linking to genesis."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                    PeersList addresses <- readTVarIO peers
-                    forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                    addresses <- getAddresses <$> readTVarIO peers
+                    forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
                             
     return ReceivedBlock
 
@@ -318,9 +374,11 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
         -- queries given address for blocks starting at height n and querying as long as we get valid answers.
         keepQuerying :: Integer -> Address -> IO [Block]
         keepQuerying n address = do
-            sendAndReceiveMsg (QueryMessage $ BlockAtHeight n) (\case
-                Just (QueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
-                _ -> return [] ) address
+            sendAndReceiveMsg (QueryMessage $ BlockAtHeight n) (\manswer -> do
+                expectAnswer peers address (QueryAnswer NoBlockFound) manswer
+                case manswer of 
+                    Just (QueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
+                    _ -> return [] ) address
         
         queryForBlocks :: IO [Block]
         queryForBlocks = do
@@ -332,8 +390,8 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
                                 b:_ -> blockBlockHeight b
 
             -- get random selection of 1 to 8 addresses
-            (PeersList peersList) <- readTVarIO peers
-            maddresses <- sampleIO (max 1 (min 8 (length peersList))) peersList
+            addresses <- getAddresses <$> readTVarIO peers
+            maddresses <- sampleIO (max 1 (min 8 (length addresses))) addresses
 
             case maddresses of
                 Nothing -> do
@@ -455,14 +513,14 @@ mining targetHash (AppState {blockchainState, incomingTxs, peers}) waitForTxs lo
                         writeUTXOPool blockchainState utxoPool'
                         return $ do
                             -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                            PeersList addresses <- readTVarIO peers
-                            forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                            addresses <- getAddresses <$> readTVarIO peers
+                            forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
                     BLockInsertedLinksToRoot lively' -> do
                         writeLivelyBlocks blockchainState lively'
                         return $ do
                             -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                            PeersList addresses <- readTVarIO peers
-                            forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                            addresses <- getAddresses <$> readTVarIO peers
+                            forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
                     _ -> return $ log "Warning! Mined block is fucked up."
 
             --  broadcast block
@@ -473,8 +531,8 @@ mining targetHash (AppState {blockchainState, incomingTxs, peers}) waitForTxs lo
 -- Returns when transaction appears in blockchain.
 broadcastTransaction :: AppState -> Transaction -> IO ()
 broadcastTransaction (AppState {peers, blockchainState}) tx = do
-    PeersList peers <- readTVarIO peers
-    forConcurrently_ peers $ sendAndReceiveMsg (TransactionMessage tx) (const (return ()))
+    addresses <- getAddresses <$> readTVarIO peers
+    forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (TransactionMessage tx) (expectAnswer peers addr ReceivedTransaction) addr
     let txid = shash256 (Right tx)
     -- keep checking whether at least first output from transaction appears in UTXOPool
     atomically $ do
@@ -533,6 +591,7 @@ runNode config = do
             -- TODO: Idea: change return type to Either and let user handle different errors
             log err
             log "app: Couldn't open or parse peers file. Quits."
+            -- TODO: Bug: App quits before logging errors.
             return Nothing
         Right peers ->
             case eitherBlockchain of

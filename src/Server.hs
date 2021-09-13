@@ -24,6 +24,7 @@ import Control.Exception.Base (bracket)
 import Data.Word
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON)
+import Data.Aeson.Types (FromJSONKey, ToJSONKey)
 
 int64ToByteString :: Int64 -> B.ByteString
 int64ToByteString n = B.pack [aaaaaaaa, aaaaaaa, aaaaaa, aaaaa, aaaa, aaa, aa, a]
@@ -74,10 +75,12 @@ readMessage sock = do
 -- Either a service name e.g., "http" or a numeric port number.
 
 data Address = Address {hostName :: HostName, serviceName :: ServiceName}
-    deriving (Show, Generic)
+    deriving (Show, Generic, Eq, Ord)
 
 instance ToJSON Address
 instance FromJSON Address
+instance FromJSONKey Address
+instance ToJSONKey Address
     
 -- get tcp AddrInfo for given url and port
 grabAddressInfo :: Address -> IO AddrInfo
