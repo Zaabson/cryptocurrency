@@ -16,13 +16,6 @@ import BlockType (blockBlockHeight, TXID, Output(..), Transaction(..), Input,
                   BlockReference, BlockHeader(..), Coinbase(..), Block(..), Cent(..), Genesis, PublicAddress)
 import BlockValidation (calculateBlockReward, createSignedInput, UTXO(..), txGetNewUTXOs)
 
--- Idea:
---   - transaction creation environment/monad
---   - collects created along the way OwnedUTXOs (i.e. change)
---   - stores RandomGen in the background to be able to generate key pairs
--- ^ naaah, transaction is no matter what created at one go knowing [OwnedUTXO] and [Output]
---   and maybe returning change  
-
 data Keys = Keys RSA.PublicKey RSA.PrivateKey
 
 data OwnedUTXO = OwnedUTXO UTXO Keys
@@ -111,7 +104,7 @@ crunchNonce (TargetHash target) merklehash timestamp prevhash =
 
 -- Crunches hashes to find nonce, creates a block with given data.
 -- Doesn't include fees!!! TODO
-mineBlock :: TargetHash               -- target hash
+mineBlock :: TargetHash            -- target hash
           -> Keys                  -- keys for coinbase output
           -> UTCTime               -- creation time
           -> [Transaction]         -- transactions to include
