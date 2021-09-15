@@ -3,27 +3,31 @@ module Message where
 import Data.Aeson
 import BlockType (Block, Transaction)
 import GHC.Generics (Generic)
+import Server (Address(Address))
 
 data Message = PingMessage
              | BlockMessage Block
              | TransactionMessage Transaction
-             | QueryMessage Query
+             | BlockchainQuery Query
+             | ContactQuery
     deriving (Show, Generic)
 
-data Answer = AnswerPing
+data Answer = PingAnswer
             | ReceivedBlock
             | ReceivedTransaction
             | MessageParseError
-            | QueryAnswer QueryResult
+            | BlockchainQueryAnswer QueryResult
+            | ContactQueryAnswer [Address]
     deriving (Show, Generic)
 
 -- Equality based on constructor, used in App.hs/expectAnswer to check whether we received correct answer
 answerEq :: Answer -> Answer -> Bool
-answerEq AnswerPing AnswerPing = True
+answerEq PingAnswer PingAnswer = True
 answerEq ReceivedBlock ReceivedBlock = True
 answerEq ReceivedTransaction ReceivedTransaction = True
 answerEq MessageParseError MessageParseError = True
-answerEq (QueryAnswer _) (QueryAnswer _) = True
+answerEq (BlockchainQueryAnswer _) (BlockchainQueryAnswer _) = True
+answerEq (ContactQueryAnswer _) (ContactQueryAnswer _) = True
 answerEq _ _ = False
 
 instance ToJSON Message
@@ -42,6 +46,7 @@ instance FromJSON Query
 data QueryResult
     = RequestedBlock Block
     | NoBlockFound
+    | RequestedContacts [Address]
     deriving (Show, Generic)
 
 instance ToJSON QueryResult

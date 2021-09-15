@@ -23,3 +23,4 @@
   - Start with random nonce, so that we ommit unlucky cases of first fitting nonce being very big and not able to be found in 4 minutes.
   - Basic transaction validation on receiveings!
   - System of monitoring peers activity and updating contact list.
+  - Maybe Answer should be flattened to Answer with extra constructor "NoAnswer".

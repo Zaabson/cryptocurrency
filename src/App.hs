@@ -12,7 +12,7 @@ import qualified Data.Sequence as Seq (Seq, (|>), take, length, splitAt, empty)
 import Control.Arrow (first, Arrow ((&&&), (***)))
 import GHC.Generics (Generic)
 import Options.Applicative
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Control.Concurrent (MVar, forkIO, withMVar, newMVar, threadDelay)
 import Control.Monad (void, forever, liftM2, when, join, liftM3)
 import Control.DeepSeq
@@ -37,6 +37,7 @@ import Control.Monad.STM (check)
 import GHC.Conc.Sync (readTVarIO)
 import Data.Time.Clock (getCurrentTime)
 import Data.Aeson.Types (FromJSON)
+import GHC.Conc (readTVarIO)
 
 -- data MiningMode
 --     = Mining
@@ -127,6 +128,60 @@ getAddresses (PeersSet peers) = Map.keys peers
 
 getPeers :: PeersSet -> [(Address, Status)]
 getPeers (PeersSet peers) = Map.assocs peers
+
+-- Broadcast message to peers and update their statuses based on matching the expected answer.
+broadcast :: TVar PeersSet -> Message -> Answer -> IO ()
+broadcast peers msg answer = do
+    peersSet <- readTVarIO peers
+    forConcurrently_ (getAddresses peersSet) $ \addr ->
+        sendAndReceiveMsg msg (expectAnswer peers addr answer) addr
+
+-- Broadcast message to peers and update their statuses based on matching the expected answer.
+-- This can delete some contacts so we run updatePeers afterwards to keep the number of contacts high.
+broadcastAndUpdatePeers :: TVar PeersSet -> Message -> Answer -> IO ()
+broadcastAndUpdatePeers peers msg answer = do
+    broadcast peers msg answer
+    updatePeers peers
+
+-- Broadcast message to peers and update their statuses based on matching the expected answer.
+-- Also react to their answers with provided function.
+broadcastWithReply :: TVar PeersSet -> Message -> Answer -> (Maybe Answer -> IO a) -> IO [a]
+broadcastWithReply peers msg answer f = do
+    peersSet <- readTVarIO peers
+    forConcurrently (getAddresses peersSet) $ \addr ->
+        sendAndReceiveMsg
+            msg 
+            (\manswer -> do 
+                expectAnswer peers addr answer manswer
+                f manswer)
+            addr
+
+broadcastWithReply_ :: TVar PeersSet -> Message -> Answer -> (Maybe Answer -> IO ()) -> IO ()
+broadcastWithReply_ peers msg answer f = void $ broadcastWithReply peers msg answer f
+
+
+
+-- If there's less than 10 addresses in our PeersSet ask all peers for their peers address lists.
+-- Ping received addresses and add to PeersSet ones that responded.
+updatePeers :: TVar PeersSet -> IO ()
+updatePeers peers = do 
+    PeersSet peersSet <- readTVarIO peers
+    when (Map.size peersSet < 10) $
+        broadcastWithReply_ peers ContactQuery (ContactQueryAnswer []) (\case 
+                Just (ContactQueryAnswer xs) -> pingAndAdd peers xs
+                _ -> return ())
+
+    where 
+        -- Ping addresses and add to PeersSet all that responded.
+        pingAndAdd :: TVar PeersSet -> [Address] -> IO ()
+        pingAndAdd peers addresses =
+            forConcurrently_ addresses (\addr -> 
+                sendAndReceiveMsg
+                    PingMessage
+                    (\case 
+                        Just PingAnswer -> atomically $ modifyTVar' peers (\(PeersSet map) -> PeersSet $ Map.insert addr Active map)
+                        _ -> return ())
+                    addr)
 
 -- newtype PeersList = PeersList [Address]
 --     deriving (Show, Generic)
@@ -277,7 +332,7 @@ handleMessage :: ForkMaxDiff
               -> IO Answer
 handleMessage _ _ appSt log sockaddr PingMessage = do
     log "handler: Received Ping."
-    return AnswerPing
+    return PingAnswer
 
 handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) log sockaddr (BlockMessage block) = do
     
@@ -298,9 +353,7 @@ handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) l
                 return $ do
                     log "handler: Received block was inserted into chain."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                    addresses <- getAddresses <$> readTVarIO peers
-                    forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
-                    -- forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
+                    broadcastAndUpdatePeers peers (BlockMessage block) ReceivedBlock
             FutureBlock future'   -> do
                 writeFutureBlocks blockchainState future'
                 return $ do 
@@ -314,8 +367,7 @@ handleMessage forkMaxDiff targetHash appSt@(AppState {blockchainState, peers}) l
                 return $ do
                     log "handler: Inserted block linking to genesis."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                    addresses <- getAddresses <$> readTVarIO peers
-                    forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
+                    broadcastAndUpdatePeers peers (BlockMessage block) ReceivedBlock
                             
     return ReceivedBlock
 
@@ -334,22 +386,27 @@ handleMessage _ _ appSt@AppState {blockchainState} log sockaddr (TransactionMess
 
     return ReceivedTransaction
 
-handleMessage _ _ (AppState {blockchainState}) log sockaddr (QueryMessage query) = do
-    log "handler: Received a query."
+handleMessage _ _ (AppState {blockchainState}) log sockaddr (BlockchainQuery query) = do
+    log "handler: Received a blockchain query."
     case query of
         -- This is pretty tragic as is indexing in a linked list
         BlockAtHeight n -> do
             blocks <- atomically $ readFixedBlocks blockchainState
             case blocks of
-                FixedBlocks [] -> return (QueryAnswer NoBlockFound) 
+                FixedBlocks [] -> return (BlockchainQueryAnswer NoBlockFound) 
                 FixedBlocks (b : bs) ->
                     if blockBlockHeight b >= n then
                         case find (\x -> blockBlockHeight x == n) (b:bs) of
-                            Just b -> do return (QueryAnswer (RequestedBlock b))
-                            Nothing -> return (QueryAnswer NoBlockFound)
+                            Just b -> do return (BlockchainQueryAnswer (RequestedBlock b))
+                            Nothing -> return (BlockchainQueryAnswer NoBlockFound)
                     else
-                        return (QueryAnswer NoBlockFound)
+                        return (BlockchainQueryAnswer NoBlockFound)
 
+-- Answer a query with all the contacts from out contact list.  
+handleMessage _ _ (AppState {peers}) log sockaddr ContactQuery = do
+    log "handler: Received a contact query."
+    peers <- readTVarIO peers 
+    return (ContactQueryAnswer $ getAddresses peers)
 
 catchUpToBlockchain :: ForkMaxDiff
                     -> TargetHash
@@ -371,13 +428,14 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
 
 
     where
+        -- TODO: refactor with broadcastWithReply 
         -- queries given address for blocks starting at height n and querying as long as we get valid answers.
         keepQuerying :: Integer -> Address -> IO [Block]
         keepQuerying n address = do
-            sendAndReceiveMsg (QueryMessage $ BlockAtHeight n) (\manswer -> do
-                expectAnswer peers address (QueryAnswer NoBlockFound) manswer
+            sendAndReceiveMsg (BlockchainQuery $ BlockAtHeight n) (\manswer -> do
+                expectAnswer peers address (BlockchainQueryAnswer NoBlockFound) manswer
                 case manswer of 
-                    Just (QueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
+                    Just (BlockchainQueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
                     _ -> return [] ) address
         
         queryForBlocks :: IO [Block]
@@ -511,28 +569,22 @@ mining targetHash (AppState {blockchainState, incomingTxs, peers}) waitForTxs lo
                         writeLivelyBlocks blockchainState lively'
                         writeFixedBlocks blockchainState fixed'
                         writeUTXOPool blockchainState utxoPool'
-                        return $ do
+                        return $
                             -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                            addresses <- getAddresses <$> readTVarIO peers
-                            forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
+                            broadcastAndUpdatePeers peers (BlockMessage block) ReceivedBlock
                     BLockInsertedLinksToRoot lively' -> do
                         writeLivelyBlocks blockchainState lively'
-                        return $ do
+                        return $
                             -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                            addresses <- getAddresses <$> readTVarIO peers
-                            forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (BlockMessage block) (expectAnswer peers addr ReceivedBlock) addr
+                            broadcastAndUpdatePeers peers (BlockMessage block) ReceivedBlock
                     _ -> return $ log "Warning! Mined block is fucked up."
-
-            --  broadcast block
-            -- (PeersList addresses) <- readTVarIO peers
-            -- forConcurrently_ addresses $ sendAndReceiveMsg (BlockMessage block) (const $ return ())
 
 
 -- Returns when transaction appears in blockchain.
 broadcastTransaction :: AppState -> Transaction -> IO ()
 broadcastTransaction (AppState {peers, blockchainState}) tx = do
-    addresses <- getAddresses <$> readTVarIO peers
-    forConcurrently_ addresses $ \addr -> sendAndReceiveMsg (TransactionMessage tx) (expectAnswer peers addr ReceivedTransaction) addr
+    -- -- we dont call updatePeers here for it to run fastest --
+    broadcastAndUpdatePeers peers (TransactionMessage tx) ReceivedTransaction
     let txid = shash256 (Right tx)
     -- keep checking whether at least first output from transaction appears in UTXOPool
     atomically $ do
