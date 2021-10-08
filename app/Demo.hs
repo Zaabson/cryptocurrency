@@ -9,7 +9,7 @@ import Control.Concurrent.Async (wait, Async)
 config = Config {
     blockchainFilepath = "data/fixed_blocks.json",
     peersFilepath = "data/peers.json",
-    targetDifficulty   = 3,
+    targetDifficulty   = 10,
     loggingMode = ToStdin,
     port        = "49155",
     blockchainGenesis = Genesis "Złoty",
