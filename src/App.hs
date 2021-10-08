@@ -38,6 +38,7 @@ import GHC.Conc.Sync (readTVarIO)
 import Data.Time.Clock (getCurrentTime)
 import Data.Aeson.Types (FromJSON)
 import GHC.Conc (readTVarIO)
+import Data.Word (Word8)
 
 -- data MiningMode
 --     = Mining
@@ -470,8 +471,9 @@ catchUpToBlockchain forkMaxDiff targetHash appSt@(AppState {blockchainState, pee
                 _                     -> (utxoPool, fixed, lively, future)
 
 -- move this somewhere more appriopriate (or don't)
+-- difficulty ∈ [0, 32*4] where 128 is impossible and 0 is trivial.
 difficultyToTargetHash :: Int -> TargetHash
-difficultyToTargetHash n = TargetHash . RawHash . B.pack $ replicate n 0 ++ replicate (32-n) 255 
+difficultyToTargetHash n = TargetHash . RawHash . B.pack $ replicate (n `div` 4)  0 ++ [fromIntegral $ (n `mod` 4) * 64] ++ replicate (32-(n `div` 4) - 1) 255 
 
 -- Constant
 keyLength :: Int
