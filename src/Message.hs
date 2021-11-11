@@ -46,7 +46,7 @@ instance FromJSON Query
 data QueryResult
     = RequestedBlock Block
     | NoBlockFound
-    | RequestedContacts [Address]
+    -- RequestedContacts [Address]
     deriving (Show, Generic)
 
 instance ToJSON QueryResult
