@@ -20,6 +20,7 @@ data Answer = PingAnswer
             | ContactQueryAnswer [Address]
     deriving (Show, Generic)
 
+-- TODO: Use Generic to derive constr equality on Answer
 -- Equality based on constructor, used in App.hs/expectAnswer to check whether we received correct answer
 answerEq :: Answer -> Answer -> Bool
 answerEq PingAnswer PingAnswer = True
@@ -46,7 +47,7 @@ instance FromJSON Query
 data QueryResult
     = RequestedBlock Block
     | NoBlockFound
-    | RequestedContacts [Address]
+    -- RequestedContacts [Address]
     deriving (Show, Generic)
 
 instance ToJSON QueryResult
