@@ -79,12 +79,12 @@ createSendingTransaction ownedUTXOs keys@(Keys pub priv) recipient amount =
             in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys : us, tx)
 
 
-keysLength :: Int
-keysLength = 1024
+-- keysLength :: Int
+-- keysLength = 1024
 
-generateKeys :: CryptoRandomGen g =>  g -> Keys
-generateKeys g = Keys pub priv
-    where (pub, priv, _) = RSA.generateKeyPair g keysLength 
+-- generateKeys :: CryptoRandomGen g =>  g -> Keys
+-- generateKeys g = Keys pub priv
+--     where (pub, priv, _) = RSA.generateKeyPair g keysLength 
 
 -- Codec.Crypto.RSA
 -- generateKeyPair :: RandomGen g => g -> Int -> (PublicKey, PrivateKey, g)

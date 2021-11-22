@@ -16,6 +16,11 @@ import Control.DeepSeq
 
 newtype TargetHash = TargetHash RawHash
 
+-- Gives TargetHash for a number in range.
+-- difficulty ∈ [0, 32*4] where 128 is impossible and 0 is trivial difficulty.
+difficultyToTargetHash :: Int -> TargetHash
+difficultyToTargetHash n = TargetHash . RawHash . B.pack $ replicate (n `div` 4)  0 ++ [fromIntegral $ (n `mod` 4) * 64] ++ replicate (32-(n `div` 4) - 1) 255 
+
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)
 

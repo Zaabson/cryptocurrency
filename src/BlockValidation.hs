@@ -12,6 +12,7 @@ import qualified Data.Map as Map
 import qualified Codec.Crypto.RSA as RSA
 import BlockType
 import Hashing (HashOf(..), shash256, toRawHash, TargetHash(..))
+import Data.Bifunctor (first)
 -- import BlockChain (LivelyBlocks(..), linkToChain)
 
 x |> f = f x
@@ -23,13 +24,13 @@ data UTXO = UTXO TXID Integer Output -- TODO use this type below (or don't)
 instance Eq UTXO where
     (UTXO txid1 vout1 _) == (UTXO txid2 vout2 _) = (txid1 == txid2) && (vout1 == vout2)
 
-type UTXOPool = Map.Map (TXID, Integer) Output
+newtype UTXOPool = UTXOPool (Map.Map (TXID, Integer) Output)
 
 searchPool :: UTXOPool -> [Input] -> [Maybe Output]
-searchPool pool = map (\i -> Map.lookup (utxoReference i, vout i) pool)
+searchPool (UTXOPool pool) = map (\i -> Map.lookup (utxoReference i, vout i) pool)
 
 searchPool' :: UTXOPool -> [Input] -> [Maybe UTXO]
-searchPool' pool = map $ \i -> do
+searchPool' (UTXOPool pool) = map $ \i -> do
     let (txid, index) = (utxoReference i, vout i)
     output <- Map.lookup (txid, index) pool
     Just $ UTXO txid index output
@@ -87,8 +88,8 @@ validTransaction pool tx = case sequenceA $ searchPool pool (inputs tx) of
 -- valid block needs to have at least coinbase transaction.
 validateBlockTransactions' :: UTXOPool -> Block -> (UTXOPool, Bool)
 validateBlockTransactions' pool Block{transactions=[], ..} = (pool, False)
-validateBlockTransactions' pool Block{transactions=txs, ..} = foldl f (pool, True) txs
-    where f (pool, bool) tx = (foldl (flip $ uncurry Map.insert) pool (kvpairs tx), bool && validTransaction pool tx)
+validateBlockTransactions' (UTXOPool pool) Block{transactions=txs, ..} = first UTXOPool $ foldl f (pool, True) txs
+    where f (pool, bool) tx = (foldl (flip $ uncurry Map.insert) pool (kvpairs tx), bool && validTransaction (UTXOPool pool) tx)
           kvpairs tx = snd $ mapAccumL (\n o -> (n+1, ((shash256 $ Right tx, n), o))) 0 (outputs tx)
 
 -- !!! DONT FORGET COINBASE          
@@ -99,28 +100,29 @@ validateBlockTransactions' pool Block{transactions=txs, ..} = foldl f (pool, Tru
 -- ^ let's say in general outputs can't be spend in the same block they're created, but the next block there's no restrictions and coinbase can be spend.
 -- ^ ey, but it's not how this function works: an output from earlier transaction can be used as an input in a later one.
 validateBlockTransactions :: UTXOPool -> Block -> (Bool, UTXOPool)
-validateBlockTransactions pool Block{transactions=txs, coinbaseTransaction=coinbase} = 
+validateBlockTransactions (UTXOPool pool) Block{transactions=txs, coinbaseTransaction=coinbase} = 
         let (bl, utxoPool) = runState (validate txs) pool in
         -- also add coinbase UTXOs; TODO refactor
         if bl then
-            (True, foldl (\m (UTXO txid vout out) -> Map.insert (txid, vout) out m) utxoPool $ coinbaseGetNewUTXOs coinbase)
+            (True, UTXOPool $ foldl (\m (UTXO txid vout out) -> Map.insert (txid, vout) out m) utxoPool $ coinbaseGetNewUTXOs coinbase)
         else
-            (False, utxoPool)
-    where validate :: [Transaction] -> State UTXOPool Bool
+            (False, UTXOPool utxoPool)
+    where validate :: [Transaction] -> State (Map.Map (TXID, Integer) Output) Bool
           validate [] = return True
-          validate (tx : rest) = do pool <- get
-                                    let bool = validTransaction pool tx
-                                    let hash = shash256 $ Right tx
-                                    -- remove UTXOs that were referenced in inputs
-                                    let pool1 = foldl (flip Map.delete) pool $ map (utxoReference &&& vout) $ inputs tx
-                                    -- add UTXO created in outputs
-                                    let kv   = tx |> outputs |> zip [0..] |> map (\case (n, o) -> ((hash, n), o))
-                                    let pool2 = foldl (flip $ uncurry Map.insert) pool1 kv
-                                    if not bool then
-                                        return False
-                                    else do 
-                                        put pool2
-                                        (bool &&) <$> validate rest
+          validate (tx : rest) = do
+                pool <- get
+                let bool = validTransaction (UTXOPool pool) tx
+                let hash = shash256 $ Right tx
+                -- remove UTXOs that were referenced in inputs
+                let pool1 = foldl (flip Map.delete) pool $ map (utxoReference &&& vout) $ inputs tx
+                -- add UTXO created in outputs
+                let kv   = tx |> outputs |> zip [0..] |> map (\case (n, o) -> ((hash, n), o))
+                let pool2 = foldl (flip $ uncurry Map.insert) pool1 kv
+                if not bool then
+                    return False
+                else do 
+                    put pool2
+                    (bool &&) <$> validate rest
 
 coinbaseGetNewUTXOs :: Coinbase -> [UTXO]
 coinbaseGetNewUTXOs tx = 

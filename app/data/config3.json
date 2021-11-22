@@ -1,8 +1,10 @@
 {
-    "blockchainFilepath" : "../app/fixed_blocks.json",
-    "peersFilepath" : "../app/peers.json",
-    "targetDifficulty" : 2,
+    "blockchainFilepath" : "data/fixed_blocks.json",
+    "peersFilepath" : "data/peers.json",
+    "targetDifficulty" : 4,
     "loggingMode" : {"tag" : "ToStdin"},
     "port" : "49155",
-    "blockchainGenesis" : "Złoty"
+    "blockchainGenesis" : "Złoty",
+    "minerWaitForTxs" : false,
+    "forkMaxDiff" : 2
 }
