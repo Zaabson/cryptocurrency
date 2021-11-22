@@ -11,7 +11,7 @@ import BlockType
 import Data.Aeson (ToJSON, FromJSON)
 import GHC.Generics (Generic)
 import Data.Functor ( (<&>) )
-import BlockValidation (UTXOPool, UTXO(..), txGetNewUTXOs, validateBlock)
+import BlockValidation (UTXOPool (UTXOPool), UTXO(..), txGetNewUTXOs, validateBlock)
 import qualified Data.Map as Map
 import BlockCreation (blockRef)
 import Data.Maybe (fromJust, isJust, maybe)
@@ -53,7 +53,11 @@ prune maxdiff trees = map pruneA $ filter (\(Tree (d, _) _) -> d >= maxHeight - 
         pruneA (Tree (_, a) ts) = Tree a (map pruneA . filter (\(Tree (d, _) _) -> d >= maxHeight - maxdiff) $ ts)
 
 
-newtype ForkMaxDiff = ForkMaxDiff Integer
+newtype ForkMaxDiff = ForkMaxDiff Integer deriving (Generic)
+
+instance ToJSON ForkMaxDiff
+instance FromJSON ForkMaxDiff
+
 
 height :: Tree a -> Integer
 height (Tree _ []) = 0
@@ -189,7 +193,7 @@ collectUTXOs = foldl' insert2map
     -- size(pool) = n, size(block) = m
     -- does m insertions working in O(mlogn)
     insert2map :: UTXOPool -> Block -> UTXOPool
-    insert2map pool (Block {transactions=txs}) =
+    insert2map (UTXOPool pool) (Block {transactions=txs}) = UTXOPool $
         foldl' (\pl (UTXO txid vout out) -> Map.insert (txid, vout) out pl) pool
                 (concatMap txGetNewUTXOs txs)
 
@@ -220,8 +224,8 @@ instance ToJSON LivelyBlocks
 instance FromJSON LivelyBlocks
 
 -- type not in use but this is blockchain: 
-data Blockchain
-    = Blockchain FixedBlocks LivelyBlocks Genesis
+-- data Blockchain
+--     = Blockchain FixedBlocks LivelyBlocks Genesis
 
 -- Searches block tree looking for a Block that hashes to a matching previousHash,
 -- returns a zipper focused on this block - the new block should be inserted here as a child 

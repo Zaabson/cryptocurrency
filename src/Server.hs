@@ -91,7 +91,7 @@ grabAddressInfo address =
         (Just $ serviceName address)
 
 
-type HandlerFunc = SockAddr -> B.ByteString -> IO B.ByteString 
+type ServerHandler = SockAddr -> B.ByteString -> IO B.ByteString 
 
 type Miliseconds = Int
 timeOutToRecvTCP_FIN :: Miliseconds
@@ -102,7 +102,7 @@ maxConnections = 5
 -- Seems like i can change the type to MonadIO for free. I may want to
 server :: Address
        -> (String -> IO ())
-       -> HandlerFunc
+       -> ServerHandler
        -> IO ()
 server servAddr logger handler = withSocketsDo $ do
     bracket (open servAddr) close loop
@@ -145,5 +145,5 @@ server servAddr logger handler = withSocketsDo $ do
                             NSB.sendAll connsock $ appendLenBits answer)
                         (log "server: Client disconnected.")         
 
-answerPing :: HandlerFunc
-answerPing _ bs = UTF8.fromString <$> if UTF8.toString bs == "ping" then return "pong" else return ""
+-- answerPing :: ServerHandler
+-- answerPing _ bs = UTF8.fromString <$> if UTF8.toString bs == "ping" then return "pong" else return ""

@@ -24,3 +24,5 @@
   - Basic transaction validation on receiveings!
   - System of monitoring peers activity and updating contact list.
   - Maybe Answer should be flattened to Answer with extra constructor "NoAnswer".
+  - Flush logging before quit.
+  - Proper quitting.
