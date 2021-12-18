@@ -341,6 +341,8 @@ withLogging ToStderr action = withLoggingHdl action stderr
 --     }
 
 
+-- Consider abondoning RunningApp idea. Maybe better withLaunchedApp :: (IO Appstate) -> (AppState -> IO a) -> IO a
+
 -- appState, running main (mining, server), logging function
 newtype RunningApp appState = RunningApp (appState, Async ())
 -- maybe logging inside appState as already functions expect HasLogging appState

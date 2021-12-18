@@ -21,7 +21,7 @@ import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
 import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import qualified Data.Map.Strict as Map
-import Control.Monad (forever, join, void)
+import Control.Monad (forever, join, void, liftM2)
 import Data.Foldable (toList)
 import Control.Concurrent.Async (race_, async, concurrently_, waitBoth)
 import Control.Concurrent (threadDelay, newMVar, forkIO)
@@ -352,26 +352,24 @@ fullNodeHandler forkMaxDiff targetHash =
     combineHandlers (const answerPing) (receiveBlock forkMaxDiff targetHash)  receiveTransaction answerBlockchainQuery answerContactQuery
 
 
+-- Consider abondoning RunningApp idea. Maybe better withLaunchedApp :: (IO Appstate) -> (AppState -> IO a) -> IO a
+
 runFullNode :: Config -> IO (Maybe (RunningApp AppState))
 runFullNode config = do
-    -- TODO: swap for logger that flushes on exit
-    -- make logging function
+
+    let targetHash = difficultyToTargetHash $ targetDifficulty config
+    let forkMaxDiff1 = forkMaxDiff config
+    -- TODO: optional cmd arg to load state from save, otherwise only loads
+
     withLogging (loggingMode config) $ \log -> do
 
-        let targetHash = difficultyToTargetHash $ targetDifficulty config
-        let forkMaxDiff1 = forkMaxDiff config
-        -- TODO: optional cmd arg to load state from save, otherwise only loads
-        
-        eitherPeersAndBlocks <- runExceptT $ do
-            peers <- withExceptT (\e -> "app: Couldn't parse peers file. Quits with error: \"" ++ e ++ ".") $ ExceptT (eitherDecodeFileStrict (peersFilepath config) `onException` putStrLn "app: Couldn't open peers file. Quits.")
-            fixed <- withExceptT (\e -> "app: Couldn't parse fixed blockchain file. Quits with error: \"" ++ e ++ ".") $ ExceptT (eitherDecodeFileStrict (blockchainFilepath config) `onException` putStrLn "app: Couldn't open fixed blockchain file. Quits.")
-            return (peers, fixed)
+        epeers <- eitherDecodeFileStrict (peersFilepath config)
+        efixed <- eitherDecodeFileStrict (blockchainFilepath config)
 
-        case eitherPeersAndBlocks of
-            Left err -> log err >> putStrLn err >> return Nothing
+        case liftM2 (,) epeers efixed of
+            Left err -> log err >> return Nothing
             Right (peers, fixed) -> do
-
-                log "app: Loaded fixed blocks."
+                log "app: Loaded peers and fixed blocks."
 
                 -- bracket (initBlockchainState (blockchainGenesis config) fixed) ()
                 blockchainState <- initBlockchainState (blockchainGenesis config) fixed
@@ -417,7 +415,7 @@ runFullNode config = do
 
 -- Launch app, do stuff and live the app running.
 withAppDo :: Config -> (AppState -> IO ()) -> IO ()
-withAppDo config action = do 
+withAppDo config action = do
     runFullNode config >>= \case
         Nothing -> -- error is logged in runFullNode already
             return ()
