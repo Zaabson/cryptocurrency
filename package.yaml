@@ -18,6 +18,7 @@ dependencies:
   - async
   - utf8-string
   - stm
+  - stm-chans
   - DRBG
   - optparse-applicative
   - bytestring-conversion

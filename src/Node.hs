@@ -10,7 +10,7 @@ import qualified Data.Map as Map
 import Server
 import Control.Concurrent.STM
 import MessageType
-import Control.Concurrent.Async (forConcurrently_, forConcurrently, Async, async, wait)
+import Control.Concurrent.Async (forConcurrently_, forConcurrently, Async, async, wait, withAsync)
 import Control.Monad (when, void, forever)
 import Data.Function (on)
 import Client (send, sendToAll, sendAndReceive)
@@ -25,12 +25,13 @@ import BlockCreation (Keys (Keys))
 import qualified Crypto.Random.DRBG as DRBG
 import qualified Codec.Crypto.RSA as RSA
 import Crypto.Random (CryptoRandomGen(newGenIO))
-import Control.Concurrent (MVar, newMVar, forkIO, withMVar)
+import Control.Concurrent (MVar, newMVar, forkIO, withMVar, threadDelay, takeMVar)
 import Control.Monad.Except (runExceptT, ExceptT (ExceptT), withExceptT)
 import GHC.IO.IOMode (IOMode(AppendMode))
-import System.IO (withFile, hPutStrLn, hFlush, stdin, stdout, openFile, hClose)
+import System.IO (withFile, hPutStrLn, hFlush, stdin, stdout, openFile, hClose, Handle, hPutStr, stderr)
 import Control.Concurrent.STM (newTQueue, writeTQueue)
-import Control.Exception (bracket)
+import Control.Concurrent.STM.TMQueue
+import Control.Exception (bracket, finally)
 
 -- Collects functionality common between fullnode and wallet lightnode.
 -- 
@@ -227,7 +228,7 @@ catchUpToBlockchain forkMaxDiff targetHash update whatsNextBlock appState = do
 
 
 
-data LoggingMode = ToFile FilePath | ToStdin | Silent deriving Generic
+data LoggingMode = ToFile FilePath | ToStdout | ToStderr | Silent deriving Generic
 instance ToJSON LoggingMode
 instance FromJSON LoggingMode
 
@@ -284,47 +285,52 @@ makeLogger1 mode lock str       = void $ forkIO $ withMVar lock (\a -> do
     let timeinfo = formatTime defaultTimeLocale "%T" time
     let msg =  timeinfo ++ ": " ++ str
     case mode of
-        ToStdin     -> putStrLn msg
+        ToStdout    -> putStrLn msg
         ToFile path -> withFile path AppendMode (`hPutStrLn` msg)
+        ToStderr    -> hPutStrLn stderr msg
+        Silent      -> return ()  -- covered above 
     return a)
 
 makeLogger :: LoggingMode -> IO (String -> IO ())
 makeLogger mode = makeLogger1 mode <$> newMVar ()
 
-
--- TODO: implement something like this but working properly
--- Start a logger, returns a logging function to be called inside program for logging
--- and a running async (background logging process), call cancel on this async when quitting in main program.
-startLogger :: LoggingMode -> IO (String -> IO ())
-startLogger Silent = return (const (return ()))
-startLogger mode = do
-    queue <- atomically newTQueue
-    async $ bracket
-        (case mode of
-            ToStdin -> return $ stdout
-            ToFile fp -> openFile fp AppendMode)
-        hClose
-        (\hdl -> bracket (async $ printing hdl queue) (const $ waiting queue) wait)
-    return (f queue)
+-- Helper for withLogging
+withLoggingHdl :: ((String -> IO ()) -> IO a) -> Handle -> IO a
+withLoggingHdl action hdl = do
+    queue <- newTMQueueIO
+    withAsync (logging hdl queue) (\as ->
+        action (logHandle queue) `finally` quit hdl queue as
+        )
 
     where
-        f queue str = atomically $ writeTQueue queue str
+        -- Close logging queue, wait for remaining messages to be writen.
+        quit hdl queue as = do
+            atomically $ closeTMQueue queue
+            wait as -- wait for queued logs to be logged
 
-        printing hdl queue = forever $ do
-            str <- atomically $ readTQueue queue
+        -- Runs as async thread, logs messages from queue.
+        logging hdl queue = do
+            atomically (readTMQueue queue) >>= \case
+                Nothing -> return ()
+                Just str -> do
+                    hPutStrLn hdl str
+                    logging hdl queue
+
+        -- Used in action to do logging, only appends to queue.
+        logHandle :: TMQueue String -> String -> IO ()
+        logHandle queue str = do
             time <- getZonedTime
-            hPutStrLn hdl (toMsg time str)
+            let logstr = formatTime defaultTimeLocale "%T" time ++ ": " ++ str
+            atomically $ writeTMQueue queue logstr
 
-        waiting queue = do
-            -- This is strange (but valid?) because we wait for some point in time when the queue is empty,
-            -- other threads can write to queue in time surrounding from both sides this quitting operation.
-            atomically $ do
-                empty <- isEmptyTQueue queue
-                check empty
+-- Run action with provided logger handle. Logging appends message to a queue that is logged by an async thread.
+-- At quit the queue is closed and remaining messages are logged.
+withLogging :: LoggingMode -> ((String -> IO ()) -> IO a) -> IO a
+withLogging Silent action = action (const $ return ())
+withLogging (ToFile fp) action = withFile fp AppendMode $ withLoggingHdl action
+withLogging ToStdout action = withLoggingHdl action stdout
+withLogging ToStderr action = withLoggingHdl action stderr
 
-        toMsg time str =
-            let timeinfo = formatTime defaultTimeLocale "%T" time
-            in  timeinfo ++ ": " ++ str
 
 -- this type is not very usefull in general, incomingTxs and minerWallet only apply to fullnode, PeerSet is required by class constraint and blockchainState is variable.
 -- data AppState blobkchain = AppState {

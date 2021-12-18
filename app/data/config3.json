@@ -2,7 +2,7 @@
     "blockchainFilepath" : "data/fixed_blocks.json",
     "peersFilepath" : "data/peers.json",
     "targetDifficulty" : 4,
-    "loggingMode" : {"tag" : "ToStdin"},
+    "loggingMode" : {"tag" : "ToStdout"},
     "port" : "49155",
     "blockchainGenesis" : "Złoty",
     "minerWaitForTxs" : false,

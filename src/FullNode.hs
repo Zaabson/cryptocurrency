@@ -15,7 +15,7 @@ import BlockChain (FixedBlocks (FixedBlocks, getFixedBlocks), LivelyBlocks (Live
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
-import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, startLogger)
+import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging)
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
 import Network.Socket (ServiceName)
@@ -356,42 +356,43 @@ runFullNode :: Config -> IO (Maybe (RunningApp AppState))
 runFullNode config = do
     -- TODO: swap for logger that flushes on exit
     -- make logging function
-    log <- makeLogger (loggingMode config)
-    let targetHash = difficultyToTargetHash $ targetDifficulty config
-    let forkMaxDiff1 = forkMaxDiff config
-    -- TODO: optional cmd arg to load state from save, otherwise only loads
-    
-    eitherPeersAndBlocks <- runExceptT $ do
-        peers <- withExceptT (\e -> "app: Couldn't parse peers file. Quits with error: \"" ++ e ++ ".") $ ExceptT (eitherDecodeFileStrict (peersFilepath config) `onException` putStrLn "app: Couldn't open peers file. Quits.")
-        fixed <- withExceptT (\e -> "app: Couldn't parse fixed blockchain file. Quits with error: \"" ++ e ++ ".") $ ExceptT (eitherDecodeFileStrict (blockchainFilepath config) `onException` putStrLn "app: Couldn't open fixed blockchain file. Quits.")
-        return (peers, fixed)
+    withLogging (loggingMode config) $ \log -> do
 
-    case eitherPeersAndBlocks of
-        Left err -> log err >> putStrLn err >> return Nothing
-        Right (peers, fixed) -> do
+        let targetHash = difficultyToTargetHash $ targetDifficulty config
+        let forkMaxDiff1 = forkMaxDiff config
+        -- TODO: optional cmd arg to load state from save, otherwise only loads
+        
+        eitherPeersAndBlocks <- runExceptT $ do
+            peers <- withExceptT (\e -> "app: Couldn't parse peers file. Quits with error: \"" ++ e ++ ".") $ ExceptT (eitherDecodeFileStrict (peersFilepath config) `onException` putStrLn "app: Couldn't open peers file. Quits.")
+            fixed <- withExceptT (\e -> "app: Couldn't parse fixed blockchain file. Quits with error: \"" ++ e ++ ".") $ ExceptT (eitherDecodeFileStrict (blockchainFilepath config) `onException` putStrLn "app: Couldn't open fixed blockchain file. Quits.")
+            return (peers, fixed)
 
-            log "app: Loaded fixed blocks."
+        case eitherPeersAndBlocks of
+            Left err -> log err >> putStrLn err >> return Nothing
+            Right (peers, fixed) -> do
 
-            -- bracket (initBlockchainState (blockchainGenesis config) fixed) ()
-            blockchainState <- initBlockchainState (blockchainGenesis config) fixed
-            appSt        <- initAppState blockchainState peers
-            let appState = AppStatePlusLogging appSt log
+                log "app: Loaded fixed blocks."
 
-            -- TODO: catching up to  blockchain
-            -- query for blocks after our last block
-            forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
+                -- bracket (initBlockchainState (blockchainGenesis config) fixed) ()
+                blockchainState <- initBlockchainState (blockchainGenesis config) fixed
+                appSt        <- initAppState blockchainState peers
+                let appState = AppStatePlusLogging appSt log
+
+                -- TODO: catching up to  blockchain
+                -- query for blocks after our last block
+                forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
 
 
-            let mine = mining forkMaxDiff1 targetHash appSt (minerWaitForTxs config) log
+                let mine = mining forkMaxDiff1 targetHash appSt (minerWaitForTxs config) log
 
-            let serverAddr = Address "localhost" (port config)
-            let runServer = server serverAddr log (toServerHandler (fullNodeHandler forkMaxDiff1 targetHash appState) log)
+                let serverAddr = Address "localhost" (port config)
+                let runServer = server serverAddr log (toServerHandler (fullNodeHandler forkMaxDiff1 targetHash appState) log)
 
-            -- forkIO runServer
-            -- forkIO mine
-            main <- async $ concurrently_ mine runServer
+                -- forkIO runServer
+                -- forkIO mine
+                main <- async $ concurrently_ mine runServer
 
-            return (Just $ RunningApp (appSt, main))
+                return (Just $ RunningApp (appSt, main))
 
     where
 

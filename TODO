@@ -26,3 +26,5 @@
   - Maybe Answer should be flattened to Answer with extra constructor "NoAnswer".
   - Flush logging before quit.
   - Proper quitting.
+  - Specify wallet functionality so that wallet can be run seperately but also plugged in in full node for collecting coins.
+  - Investigate localhost not being resolved when run from "stack ghci".
