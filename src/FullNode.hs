@@ -17,7 +17,7 @@ import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
 import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging)
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
-import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
+import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import qualified Data.Map.Strict as Map
@@ -30,7 +30,7 @@ import qualified Crypto.Random.DRBG as DRBG
 import qualified Codec.Crypto.RSA as RSA
 import Crypto.Random (newGenIO)
 import Control.DeepSeq (force)
-import Control.Exception (evaluate, onException)
+import Control.Exception (evaluate, onException, bracket)
 import MessageType (Message(BlockMessage), ReceivedBlock (ReceivedBlock), Answer (BlockAnswer), ReceivedTransaction (ReceivedTransaction))
 import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
 import Server (Address(Address), server)
@@ -354,45 +354,47 @@ fullNodeHandler forkMaxDiff targetHash =
 
 -- Consider abondoning RunningApp idea. Maybe better withLaunchedApp :: (IO Appstate) -> (AppState -> IO a) -> IO a
 
-runFullNode :: Config -> IO (Maybe (RunningApp AppState))
-runFullNode config = do
+-- Load JSON data and save it on quit.
+-- Error can be thrown at loading and then just quit.
+withLoadSave :: (FromJSON a, ToJSON a) => FilePath -> (Either String a -> IO b) -> IO b
+withLoadSave fp = bracket (eitherDecodeFileStrict fp) (either (const $ return ()) (encodeFile fp))
 
-    let targetHash = difficultyToTargetHash $ targetDifficulty config
-    let forkMaxDiff1 = forkMaxDiff config
+
+runFullNode :: Config -> IO (Maybe (RunningApp AppState))
+runFullNode config =
     -- TODO: optional cmd arg to load state from save, otherwise only loads
 
-    withLogging (loggingMode config) $ \log -> do
+    withLogging (loggingMode config)         $ \log    ->
+      withLoadSave (peersFilepath config)      $ \epeers ->
+        withLoadSave (blockchainFilepath config) $ \efixed -> 
 
-        epeers <- eitherDecodeFileStrict (peersFilepath config)
-        efixed <- eitherDecodeFileStrict (blockchainFilepath config)
-
-        case liftM2 (,) epeers efixed of
-            Left err -> log err >> return Nothing
-            Right (peers, fixed) -> do
-                log "app: Loaded peers and fixed blocks."
-
-                -- bracket (initBlockchainState (blockchainGenesis config) fixed) ()
-                blockchainState <- initBlockchainState (blockchainGenesis config) fixed
-                appSt        <- initAppState blockchainState peers
-                let appState = AppStatePlusLogging appSt log
-
-                -- TODO: catching up to  blockchain
-                -- query for blocks after our last block
-                forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
-
-
-                let mine = mining forkMaxDiff1 targetHash appSt (minerWaitForTxs config) log
-
-                let serverAddr = Address "localhost" (port config)
-                let runServer = server serverAddr log (toServerHandler (fullNodeHandler forkMaxDiff1 targetHash appState) log)
-
-                -- forkIO runServer
-                -- forkIO mine
-                main <- async $ concurrently_ mine runServer
-
-                return (Just $ RunningApp (appSt, main))
+            case liftM2 (,) epeers efixed of
+                Left err -> log err >> return Nothing
+                Right (peers, fixed) -> main log peers fixed
 
     where
+        targetHash = difficultyToTargetHash $ targetDifficulty config
+        forkMaxDiff1 = forkMaxDiff config
+        mine log appSt = mining forkMaxDiff1 targetHash appSt (minerWaitForTxs config) log
+        serverAddr = Address "localhost" (port config)
+        runServer log appState = server serverAddr log (toServerHandler (fullNodeHandler forkMaxDiff1 targetHash appState) log)
+
+        main log peers fixed = do
+            log "app: Loaded peers and fixed blocks."
+
+            blockchainState <- initBlockchainState (blockchainGenesis config) fixed
+            appSt        <- initAppState blockchainState peers
+            let appState = AppStatePlusLogging appSt log
+
+            -- query for blocks after our last block
+            forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
+
+            -- forkIO runServer
+            -- forkIO mine
+            main <- async $ concurrently_ (mine log appSt) (runServer log appState)
+
+            return (Just $ RunningApp (appSt, main))
+
 
         initBlockchainState :: Genesis -> FixedBlocks -> IO BlockchainState
         initBlockchainState genesis fixed =
