@@ -4,7 +4,7 @@ module Main where
 -- import App
 -- import App (runNode, Config(..), LoggingMode(..))
 -- import App
-import FullNode (runFullNode, withAppDo)
+import FullNode (runFullNode)
 import BlockChain (FixedBlocks(..))
 import Network.Socket
 import Control.Monad (void)
@@ -12,7 +12,6 @@ import Data.Aeson (encodeFile, eitherDecodeFileStrict)
 import Control.Concurrent.Async
 import Options.Applicative
 import Control.Exception (finally, onException)
-import Node (RunningApp(RunningApp))
 import GHC.IO.Handle (hClose)
 import GHC.IO.FD (stdout)
 
@@ -40,5 +39,5 @@ main = do
             print error
             print "Unable to read config file. Quits."
         Right config -> do
-            withAppDo config (const $ return ())
+            runFullNode config
 --             -- encodeFile "app/fixed_blocks.json" (FixedBlocks [])

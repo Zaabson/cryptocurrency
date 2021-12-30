@@ -6,13 +6,13 @@ import BlockCreation (Keys(Keys))
 import Hashing (shash256)
 import Control.Concurrent.Async (wait, Async)
 import Node (Config(..), LoggingMode(..))
-import FullNode (generateKeys, withAppDo)
+import FullNode (generateKeys)
 import InMemory (logger)
 
 config = Config {
     blockchainFilepath = "data/fixed_blocks.json",
     peersFilepath = "data/peers.json",
-    targetDifficulty   = 10,
+    targetDifficulty   = 4,
     loggingMode = ToStdout,
     port        = "49155",
     blockchainGenesis = Genesis "Złoty",

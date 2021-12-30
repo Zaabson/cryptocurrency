@@ -360,7 +360,7 @@ withLoadSave :: (FromJSON a, ToJSON a) => FilePath -> (Either String a -> IO b) 
 withLoadSave fp = bracket (eitherDecodeFileStrict fp) (either (const $ return ()) (encodeFile fp))
 
 
-runFullNode :: Config -> IO (Maybe (RunningApp AppState))
+runFullNode :: Config -> IO ()
 runFullNode config =
     -- TODO: optional cmd arg to load state from save, otherwise only loads
 
@@ -369,7 +369,7 @@ runFullNode config =
         withLoadSave (blockchainFilepath config) $ \efixed -> 
 
             case liftM2 (,) epeers efixed of
-                Left err -> log err >> return Nothing
+                Left err -> log err
                 Right (peers, fixed) -> main log peers fixed
 
     where
@@ -391,9 +391,9 @@ runFullNode config =
 
             -- forkIO runServer
             -- forkIO mine
-            main <- async $ concurrently_ (mine log appSt) (runServer log appState)
+            concurrently_ (mine log appSt) (runServer log appState)
 
-            return (Just $ RunningApp (appSt, main))
+            return ()
 
 
         initBlockchainState :: Genesis -> FixedBlocks -> IO BlockchainState
@@ -416,11 +416,11 @@ runFullNode config =
 
 
 -- Launch app, do stuff and live the app running.
-withAppDo :: Config -> (AppState -> IO ()) -> IO ()
-withAppDo config action = do
-    runFullNode config >>= \case
-        Nothing -> -- error is logged in runFullNode already
-            return ()
-        Just (RunningApp (appSt, main)) -> do
-            action <- async $ action appSt
-            void $ waitBoth action main
+-- withAppDo :: Config -> (AppState -> IO ()) -> IO ()
+-- withAppDo config action = do
+--     runFullNode config >>= \case
+--         Nothing -> -- error is logged in runFullNode already
+--             return ()
+--         Just (RunningApp (appSt, main)) -> do
+--             action <- async $ action appSt
+--             void $ waitBoth action main
