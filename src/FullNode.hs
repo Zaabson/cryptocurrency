@@ -253,7 +253,7 @@ receiveBlock forkMaxDiff targetHash appState = MsgHandler $ \block -> do
     -- do the validation etc concurrently not to hold a connection for long
 
     forkIO . join . runAtomically $ do
-        -- Note that this atomical operation is time-consuming.
+        -- Note that this atomical operation is time-consuming. TODO: Benchmark how big of a problem that is.
         lively   <- readMemory appState
         fixed    <- readMemory appState
         future   <- readMemory appState

@@ -125,13 +125,22 @@ updateWithBlock :: ForkMaxDiff                   -- constant specifying which fo
 updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks {root ,forest}) fb@(FixedBlocks fixed) (FutureBlocks future) =
     -- Does block link directly to root?
     if blockPreviousHash newblock == root then
+        -- Is it already present?
         if any ((== shash256 (blockHeader newblock)) . (\case Tree b _ -> shash256 (blockHeader b)) ) forest then
             BlockAlreadyInserted
         else
-            BLockInsertedLinksToRoot (lb {forest=newTree newblock : forest})
+            -- Is it valid?
+            if fst $ validateBlock target utxoPool newblock then
+                BLockInsertedLinksToRoot (lb {forest=newTree newblock : forest})
+            else
+                BlockInvalid
     else
+        -- TODO: improve this junk algorithm
+        -- Find a node in LivelyBlocks with given hash referenced by newblock
         case break (isJust . snd) $ map (id &&& linkToChain newblock) forest of
-            -- new block doesn't append to any known recent block
+
+            -- New block doesn't append to any known recent block - add it to FutureBlocks.
+            -- TODO: Manage FutureBlocks.
             (_, []) -> FutureBlock . FutureBlocks $ Map.alter (maybe (Just $ Set.singleton newblock) (Just . Set.insert newblock)) (blockPreviousHash newblock) future
 
             -- new block appends to blockchain
