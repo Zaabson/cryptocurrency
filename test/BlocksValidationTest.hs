@@ -9,8 +9,8 @@ import Data.List (foldl')
 import BlockCreation (OwnedUTXO(OwnedUTXO))
 
 
-foldBlockchain :: [Block] -> Maybe UTXOPool
-foldBlockchain = foldl' f (Just (UTXOPool Map.empty))
+foldBlockTransactions :: [Block] -> Maybe UTXOPool
+foldBlockTransactions = foldl' f (Just (UTXOPool Map.empty))
     where
         f (Just (UTXOPool utxos)) block =
             case validateBlockTransactions (UTXOPool utxos) block of
@@ -22,7 +22,7 @@ foldBlockchain = foldl' f (Just (UTXOPool Map.empty))
 -- are the same that the ones arbitraryBlockchain accumulates in the process of generating blocks. 
 prop_UTXOPoolCorrect :: BlockchainWithState -> Bool
 prop_UTXOPoolCorrect (BlockchainWithState utxos blocks genesis) =
-    case foldBlockchain (reverse blocks) of
+    case foldBlockTransactions (reverse blocks) of
         Just (UTXOPool utxoPool) -> 
             -- all utxoPool contains all utxos and theyre the same size, then utxoPool == utxos
             all (\(OwnedUTXO (UTXO txid vout _) _) -> 

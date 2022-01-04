@@ -23,5 +23,8 @@ main = do
     -- sample' arbitraryBlockchain >>= mapM (\(_, blocks, genesis) -> pPrint genesis >> pPrint blocks)
     -- sample' arbitraryBlockchain
     quickCheck prop_bytestringToInt64
-    quickCheckWith (stdArgs {maxSize = 10}) prop_reverseToZipper
+    quickCheckWith (stdArgs {maxSize = 30}) prop_reverseToZipper
+    quickCheckWith (stdArgs {maxSize = 30}) (prop_pruneTrees 2)
+    quickCheckWith (stdArgs {maxSize = 30}) (prop_pruneTrees 5)
+    quickCheckWith (stdArgs {maxSize = 30}) (prop_pruneTrees 0)
     quickCheckWith (stdArgs {maxSize = 10}) prop_UTXOPoolCorrect
