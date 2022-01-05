@@ -1,3 +1,1 @@
-[[{"hostName" : "localhost", "serviceName" : "49153"}, {"tag" : "Active"}], 
- [{"hostName" : "localhost", "serviceName" : "49154"}, {"tag" : "Active"}], 
- [{"hostName" : "localhost", "serviceName" : "49155"}, {"tag" : "Active"}]]
+[[{"hostName":"localhost","serviceName":"49153"},{"tag":"Active"}],[{"hostName":"localhost","serviceName":"49154"},{"tag":"Active"}],[{"hostName":"localhost","serviceName":"49155"},{"tag":"Active"}]]
