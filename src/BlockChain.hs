@@ -307,3 +307,9 @@ insertHere a (Zipper ts b) = Zipper (Tree a [] : ts) b
 -- returns a list of tree's focused (zippers) on nodes in dfs order
 dfs :: Tree a -> [Zipper a]
 dfs t@(Tree a ts) = toZipper t : concatMap dfs ts
+
+goRight :: Zipper a -> Maybe (Zipper a)
+goRight (Zipper _ (Root _)) = Nothing 
+goRight (Zipper _ (Brother _ _ _ [])) = Nothing
+goRight (Zipper ts (Brother f l a (Tree e cs : rs))) = Just $ Zipper cs (Brother f (Tree a ts : l) e rs)
+
