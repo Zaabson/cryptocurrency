@@ -121,7 +121,7 @@ mining :: ForkMaxDiff       -- constant specyfying at what difference between th
 mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} waitForTxs log = forever $ do
 
     (lastblockRef, height)  <- atomically getLastBlockReference
-
+    
     -- find pending Transaction's to include in the Block
     txs <-
         if waitForTxs then
@@ -393,7 +393,8 @@ runFullNode config =
             -- forkIO mine
             concurrently_ (mine log appSt) (runServer log appState)
 
-            return ()
+
+            -- return ()
 
 
         initBlockchainState :: Genesis -> FixedBlocks -> IO BlockchainState

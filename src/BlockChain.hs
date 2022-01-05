@@ -17,6 +17,7 @@ import BlockCreation (blockRef)
 import Data.Maybe (fromJust, isJust, maybe)
 import Control.Arrow ((&&&))
 import qualified Data.Set as Set
+import qualified Data.Tree as DTree -- Didn't realize it's there
 
 -- Returns a leaf furthest from root, "arbitrary" one if there's a draw
 -- Nothing if LivelyBlocks empty.
@@ -161,9 +162,14 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                         let newforest = map fst ts1 ++ [fromZipper $ case zipper of Zipper ts pl -> Zipper (newtree : ts) pl] ++ map fst ts2 in
                         -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                         let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
-                        in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool newfixed)
+                        -- let (newfixed, lively) = ([], newforest)
+                        in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed))
+                        -- in trace
+                        --     ("newfixed++fixed=" ++ show (newfixed ++ fixed) ++ show (ts1 ++ ts2) ++ " LivelyBlocks=" ++ (show (maybe root blockRef (safeHead (newfixed ++ fixed))) ++ "\n" ++ drawBlockheights lively ) ++ " maxdiff=" ++ show maxdiff)
+                            -- (BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed)))
                     else
                         BlockInvalid
+            (_, (_, Nothing) : _) -> error "Break on (isjust . snd) - doesn't happen"
 
     where
         
@@ -270,6 +276,13 @@ data Tree a = Tree a [Tree a] deriving (Show, Functor, Generic) -- not empty
 instance ToJSON a => ToJSON (Tree a)
 instance FromJSON a => FromJSON (Tree a)
 
+tree2tree :: Tree a -> DTree.Tree a
+tree2tree (Tree a ts) = DTree.Node a (map tree2tree ts)
+drawMyTree = DTree.drawTree . tree2tree
+drawMyForest = DTree.drawForest . map tree2tree
+drawBlockheights :: [Tree Block] -> String
+drawBlockheights = drawMyForest . map (fmap (show . blockBlockHeight))
+
 -- Focused tree.
 -- Represents a location in a Tree, a node. Tree can be reconstructed from Zipper. 
 --                  children ↓  , ↓ element kept at the node + "surroundings" 
@@ -293,6 +306,11 @@ goDown :: Zipper a -> Maybe (Zipper a)
 goDown (Zipper [] _) = Nothing
 goDown (Zipper ((Tree a ts) : cs) p) = Just $ Zipper ts (Brother p [] a cs)
 
+goRight :: Zipper a -> Maybe (Zipper a)
+goRight (Zipper _ (Root _)) = Nothing 
+goRight (Zipper _ (Brother _ _ _ [])) = Nothing
+goRight (Zipper ts (Brother f l a (Tree e cs : rs))) = Just $ Zipper cs (Brother f (Tree a ts : l) e rs)
+
 toZipper :: Tree a -> Zipper a
 toZipper (Tree a ts) = Zipper ts (Root a)
 
@@ -315,10 +333,10 @@ insertHere a (Zipper ts b) = Zipper (Tree a [] : ts) b
 
 -- returns a list of tree's focused (zippers) on nodes in dfs order
 dfs :: Tree a -> [Zipper a]
-dfs t@(Tree a ts) = toZipper t : concatMap dfs ts
+dfs = dfsz . toZipper
+    where
+        dfsz :: Zipper a -> [Zipper a]
+        dfsz z = z : concatMap dfsz (go (goDown z))
 
-goRight :: Zipper a -> Maybe (Zipper a)
-goRight (Zipper _ (Root _)) = Nothing 
-goRight (Zipper _ (Brother _ _ _ [])) = Nothing
-goRight (Zipper ts (Brother f l a (Tree e cs : rs))) = Just $ Zipper cs (Brother f (Tree a ts : l) e rs)
-
+        go Nothing = []
+        go (Just zz) = zz : go (goRight zz)

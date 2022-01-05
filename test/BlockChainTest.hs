@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 module BlockChainTest where
 
 import BlockChain

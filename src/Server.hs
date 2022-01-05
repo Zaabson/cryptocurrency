@@ -113,6 +113,8 @@ server servAddr logger handler = withSocketsDo $ do
         addrinfo <- grabAddressInfo servAddr
 
         sock <- socket (addrFamily addrinfo) Stream defaultProtocol
+        
+        setSocketOption sock ReusePort 1
 
         -- bind it to the address we're listening to
         bind sock (addrAddress addrinfo)
