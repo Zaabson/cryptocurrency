@@ -67,6 +67,9 @@ getAddresses (PeersSet peers) = Map.keys peers
 getPeers :: PeersSet -> [(Address, Status)]
 getPeers (PeersSet peers) = Map.assocs peers
 
+insertPeer :: Address -> Status -> PeersSet -> PeersSet
+insertPeer addr status (PeersSet s) = PeersSet (Map.insert addr status s)
+
 -- Broadcast message to peers and update their statuses based on matching the expected answer.
 -- broadcast :: TVar PeersSet -> Message -> Answer -> IO ()
 broadcast :: InMemory appState m PeersSet => appState -> Message -> Answer -> IO ()

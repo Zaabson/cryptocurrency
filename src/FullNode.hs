@@ -12,16 +12,16 @@ import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, ans
 import Hashing (TargetHash, shash256, difficultyToTargetHash)
 import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader))
 import BlockChain (FixedBlocks (FixedBlocks, getFixedBlocks), LivelyBlocks (LivelyBlocks, root, forest), FutureBlocks (FutureBlocks), BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs)
-import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO)
+import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
-import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging)
+import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active))
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import qualified Data.Map.Strict as Map
-import Control.Monad (forever, join, void, liftM2)
+import Control.Monad (forever, join, void, liftM2, (>=>))
 import Data.Foldable (toList)
 import Control.Concurrent.Async (race_, async, concurrently_, waitBoth)
 import Control.Concurrent (threadDelay, newMVar, forkIO)
@@ -35,7 +35,6 @@ import MessageType (Message(BlockMessage), ReceivedBlock (ReceivedBlock), Answer
 import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
 import Server (Address(Address), server)
 import InMemory (logger, HasLogging, InMemory (readMemory, writeMemory, modifyMemory), runAtomically, InMemoryRead)
-
 
 data Config = Config {
         blockchainFilepath :: FilePath,
@@ -121,7 +120,7 @@ mining :: ForkMaxDiff       -- constant specyfying at what difference between th
 mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} waitForTxs log = forever $ do
 
     (lastblockRef, height)  <- atomically getLastBlockReference
-    
+
     -- find pending Transaction's to include in the Block
     txs <-
         if waitForTxs then
@@ -354,10 +353,15 @@ fullNodeHandler forkMaxDiff targetHash =
 
 -- Consider abondoning RunningApp idea. Maybe better withLaunchedApp :: (IO Appstate) -> (AppState -> IO a) -> IO a
 
+-- TODO: Improve and abstract data loading.
 -- Load JSON data and save it on quit.
 -- Error can be thrown at loading and then just quit.
-withLoadSave :: (FromJSON a, ToJSON a) => FilePath -> (Either String a -> IO b) -> IO b
-withLoadSave fp = bracket (eitherDecodeFileStrict fp) (either (const $ return ()) (encodeFile fp))
+withLoadSave :: (FromJSON a, ToJSON a) => FilePath -> (Either String (TVar a) -> IO b) -> IO b
+withLoadSave fp = bracket
+    (do
+        eload <- eitherDecodeFileStrict fp
+        either (return . Left) (fmap Right . newTVarIO) eload)
+    (either (const $ return ()) (readTVarIO >=> encodeFile fp))
 
 
 runFullNode :: Config -> IO ()
@@ -366,7 +370,7 @@ runFullNode config =
 
     withLogging (loggingMode config)         $ \log    ->
       withLoadSave (peersFilepath config)      $ \epeers ->
-        withLoadSave (blockchainFilepath config) $ \efixed -> 
+        withLoadSave (blockchainFilepath config) $ \efixed ->
 
             case liftM2 (,) epeers efixed of
                 Left err -> log err
@@ -389,30 +393,34 @@ runFullNode config =
             -- query for blocks after our last block
             forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
 
+            -- forkIO . forever $ do
+            --     threadDelay 8000000
+            --     fixed <- atomically $ readFixedBlocks blockchainState
+            --     print fixed
+
             -- forkIO runServer
             -- forkIO mine
             concurrently_ (mine log appSt) (runServer log appState)
 
-
             -- return ()
 
 
-        initBlockchainState :: Genesis -> FixedBlocks -> IO BlockchainState
-        initBlockchainState genesis fixed =
-            BlockchainState genesis
-                <$> newTVarIO fixed
-                <*> newTVarIO (LivelyBlocks {
-                        root=case fixed of
+        initBlockchainState :: Genesis -> TVar FixedBlocks -> IO BlockchainState
+        initBlockchainState genesis fixed = atomically $ do
+            fixed1 <- readTVar fixed
+            BlockchainState genesis fixed 
+                <$> newTVar (LivelyBlocks {
+                        root=case fixed1 of
                             FixedBlocks [] -> shash256 (Left genesis)
                             FixedBlocks (b:bs) -> blockRef b, forest=[]})
-                <*> newTVarIO (FutureBlocks Map.empty)
-                <*> newTVarIO (collectUTXOs (UTXOPool Map.empty) (getFixedBlocks fixed))
+                <*> newTVar (FutureBlocks Map.empty)
+                <*> newTVar (collectUTXOs (UTXOPool Map.empty) (getFixedBlocks fixed1))
 
-        initAppState :: BlockchainState -> PeersSet -> IO AppState
+        initAppState :: BlockchainState -> TVar PeersSet -> IO AppState
         initAppState blockchainState peers =
             AppState blockchainState
                 <$> newTVarIO Seq.empty
-                <*> newTVarIO peers
+                <*> return peers
                 <*> newTVarIO []
 
 

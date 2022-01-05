@@ -162,11 +162,7 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                         let newforest = map fst ts1 ++ [fromZipper $ case zipper of Zipper ts pl -> Zipper (newtree : ts) pl] ++ map fst ts2 in
                         -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                         let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
-                        -- let (newfixed, lively) = ([], newforest)
                         in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed))
-                        -- in trace
-                        --     ("newfixed++fixed=" ++ show (newfixed ++ fixed) ++ show (ts1 ++ ts2) ++ " LivelyBlocks=" ++ (show (maybe root blockRef (safeHead (newfixed ++ fixed))) ++ "\n" ++ drawBlockheights lively ) ++ " maxdiff=" ++ show maxdiff)
-                            -- (BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed)))
                     else
                         BlockInvalid
             (_, (_, Nothing) : _) -> error "Break on (isjust . snd) - doesn't happen"
