@@ -1,0 +1,8 @@
+
+What data out of the runtime?
+    - Wallet
+    - FixedBlocks?
+    -- UTXOPool?
+
+But wait, if now FixedBlocks let's say are in the db theyre not in TVar. Need to decide on STM vs Database transactions.
+^ This means though no "cross-atomicity" needed.

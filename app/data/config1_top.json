@@ -1,0 +1,10 @@
+{
+    "blockchainFilepath" : "app/data/fixed_blocks.json",
+    "peersFilepath" : "app/data/peers.json",
+    "targetDifficulty" : 4,
+    "loggingMode" : {"tag" : "ToFile", "contents" : "node1-logs"},
+    "port" : "49153",
+    "blockchainGenesis" : "Złoty",
+    "minerWaitForTxs" : true,
+    "forkMaxDiff" : 2
+}

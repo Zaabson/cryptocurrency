@@ -1,0 +1,44 @@
+2021-12-30 17:44:25.272884925000 [20930(ThreadId 9)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/zaabson/haskell/cryptocurrency/src/Node.hs> [("ArbitraryBlock","/home/zaabson/haskell/cryptocurrency/test/ArbitraryBlock.hs"),("BlockChain","/home/zaabson/haskell/cryptocurrency/src/BlockChain.hs"),("BlockChainTest","/home/zaabson/haskell/cryptocurrency/test/BlockChainTest.hs"),("BlockCreation","/home/zaabson/haskell/cryptocurrency/src/BlockCreation.hs"),("BlockType","/home/zaabson/haskell/cryptocurrency/src/BlockType.hs"),("BlockValidation","/home/zaabson/haskell/cryptocurrency/src/BlockValidation.hs"),("BlocksValidationTest","/home/zaabson/haskell/cryptocurrency/test/BlocksValidationTest.hs"),("Hashing","/home/zaabson/haskell/cryptocurrency/src/Hashing.hs"),("Main","/home/zaabson/haskell/cryptocurrency/test/Spec.hs"),("Merkle","/home/zaabson/haskell/cryptocurrency/src/Merkle.hs"),("Server","/home/zaabson/haskell/cryptocurrency/src/Server.hs")])
+2021-12-30 17:45:52.093942454000 [20930(ThreadId 8)] CRITICAL REQUEST - invalid HANDLE. eof.
+2021-12-30 17:48:36.151845352000 [21492(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-12-30 17:51:46.080989005000 [22076(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-01 18:40:45.073360478000 [24659(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-01 18:44:08.224799745000 [25042(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-01 18:45:33.838378991000 [25259(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-02 23:41:15.764718133000 [5135(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-02 23:50:38.054427477000 [5492(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-02 23:53:32.010793257000 [5664(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-03 00:38:58.309976446000 [8068(ThreadId 8)] CRITICAL REQUEST - invalid HANDLE. eof.
+2022-01-04 19:52:36.017997746000 [22010(ThreadId 9)] ERROR APP - Prelude.read: no parse
+2022-01-04 19:53:40.256702813000 [22526(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 19:56:41.976225164000 [22903(ThreadId 9)] ERROR APP - Prelude.read: no parse
+2022-01-04 19:58:59.074021278000 [23078(ThreadId 8)] CRITICAL REQUEST - invalid HANDLE. eof.
+2022-01-04 19:59:05.918764664000 [23200(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 19:59:45.877170913000 [23312(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 20:00:03.804813482000 [23376(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 20:06:50.175540184000 [24031(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 20:07:22.920874703000 [24159(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 20:12:51.045069422000 [24468(ThreadId 9)] ERROR APP - Prelude.read: no parse
+2022-01-04 20:47:16.949698488000 [27578(ThreadId 8)] CRITICAL REQUEST - invalid HANDLE. eof.
+2022-01-04 20:47:28.857207754000 [27714(ThreadId 9)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2022-01-04 20:58:09.104162994000 [28722(ThreadId 9)] ERROR APP - start debugging failed. parse error on input ‘{’
+ : Left "parse error on input \8216{\8217\n"
+2022-01-04 21:00:33.715922315000 [28956(ThreadId 9)] ERROR APP - start debugging failed. user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: maxdiff
+Variable not in scope: newforest
+) : Left "user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: maxdiff\nVariable not in scope: newforest\n)"
+2022-01-04 21:02:35.080320618000 [29119(ThreadId 9)] ERROR APP - start debugging failed. user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: maxdiff
+Variable not in scope: newforest
+) : Left "user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: maxdiff\nVariable not in scope: newforest\n)"
+2022-01-04 21:13:05.305374360000 [29119(ThreadId 9)] ERROR APP - Prelude.read: no parse
+2022-01-04 21:14:23.677828225000 [29973(ThreadId 9)] ERROR APP - start debugging failed. user error ([DAP][ERROR] error occurred while runStmt. Just Couldn't match expected type ‘[Block]’
+            with actual type ‘FixedBlocks’
+) : Left "user error ([DAP][ERROR] error occurred while runStmt. Just Couldn't match expected type \8216[Block]\8217\n            with actual type \8216FixedBlocks\8217\n)"
+2022-01-04 21:27:13.793297893000 [31336(ThreadId 9)] ERROR APP - start debugging failed. user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: trace :: [Char] -> Bool -> t
+) : Left "user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: trace :: [Char] -> Bool -> t\n)"
+2022-01-04 21:29:03.418615966000 [31501(ThreadId 9)] ERROR APP - start debugging failed. user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: trace :: [Char] -> Bool -> t
+) : Left "user error ([DAP][ERROR] error occurred while runStmt. Just Variable not in scope: trace :: [Char] -> Bool -> t\n)"
+2022-01-04 21:31:06.981065084000 [31716(ThreadId 9)] ERROR APP - start debugging failed. user error (Not in scope. ) : Left "user error (Not in scope. )"
+2022-01-04 21:32:40.616539896000 [31894(ThreadId 9)] ERROR APP - start debugging failed. user error (Not in scope. ) : Left "user error (Not in scope. )"
+2022-01-04 21:33:49.509023568000 [32069(ThreadId 9)] ERROR APP - start debugging failed. user error ([DAP][ERROR] error occurred while runStmt. Just Non type-variable argument in the constraint: Num (t1 -> t2)
+(Use FlexibleContexts to permit this)
+) : Left "user error ([DAP][ERROR] error occurred while runStmt. Just Non type-variable argument in the constraint: Num (t1 -> t2)\n(Use FlexibleContexts to permit this)\n)"

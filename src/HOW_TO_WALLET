@@ -1,0 +1,44 @@
+
+-- roughly
+createTransaction :: Cent -> PublicAddress -> Transaction
+
+WaitForIncluding :: TXID -> m ()
+WaitForIncluding = do
+    wait
+    deleteUsedCoins
+    AddNewUTXOs
+
+-- Oriented around UTXOs or transactions of interest?
+
+## If transactions:
+
+We don't wait for anything.
+
+On each new block we update statuses of transactions.
+
+We create transaction from outputs from "fixed" transactions.
+
+Transaction status could maybe match block status?  fixed, lively, future*, pending 
+* if our transaction is in FutureBlocks, is it important difference from Lively or Pending?
+Also what is the difference here between lively and pending? in both cases we don't 
+
+How is block validity assessed?
+    a) wallet works like full node / as a part of full node
+    b) wallet queries some number of nodes to become more certain
+    c) wallet works like light node and keeps BlockHeaders. Without mantaining UTXOPool can't assess validity! BUT, can wait for few more blocks!
+
+## Feasible using only AppState?
+Could monitor UTXOPool for arrival of outputs from our transaction, but this searches whole UTXOPool on every modification (it doesn't change complexity if not many transactions).
+An improvement would be to check it on arrival of a new block, but this is not possible with the only interface being the access to AppState.
+
+## Add transactions pointing to our address?
+Is it standard wallet functionality? But useful for demo.
+Maybe function to query other nodes for a transaction with TXID (not implemented yet).
+
+## Argument for database
+We might want for demo to have miner share wallet with wallet app. Problems with synchronizing file read/writes. 
+
+Here's a catch: 
+    1) wallet receives a block and gets transactions from db
+    2) miner ads new transaction with keys to db
+    3) miner - if doesn't receive the same block twice - will never update the transaction status
