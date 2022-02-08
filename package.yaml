@@ -24,6 +24,10 @@ dependencies:
   - bytestring-conversion
   - sampling
   - deepseq
+  - hasql
+  - vector
+  - text
+  - contravariant-extras
 
 library:
   source-dirs: src

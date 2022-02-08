@@ -189,12 +189,12 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                 
             Nothing -> Tree block []
 
-        pathFromRootA :: Place Block -> [Block]-> [Block]
+        pathFromRootA :: Place a -> [a]-> [a]
         pathFromRootA (Root bl) acc               = bl : acc
         pathFromRootA (Brother parent _ bl _) acc = pathFromRootA parent (bl : acc)
 
         -- returns a list of blocks on a path starting from root and ending on given Zipper
-        pathFromRoot :: Zipper Block -> [Block]
+        pathFromRoot :: Zipper a -> [a]
         pathFromRoot (Zipper _ pl) = pathFromRootA pl []
 
 collectUTXOs :: UTXOPool -> [Block] -> UTXOPool
