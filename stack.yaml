@@ -1,10 +1,8 @@
-resolver: lts-16.16
+resolver: lts-18.24
 
 packages:
   - .
 
 extra-deps:
-  - DRBG-0.5.5
-  - cipher-aes128-0.7.0.5@sha256:95c6327b0c93839f56e74cace17d9b85292214975bac9e8b7c13ebb725ba3856,3777
-  - combinat-0.2.9.0@sha256:3daed23a2376f8d9903dc2c1c3758f1f2a0527178c81023080507e5f5ddf5b7a,5107
-  - lmdb-simple-0.4.0.0@sha256:a4e72c3e2edbf4103ce7298ab566f8c914ea9159624adc2ce094f1122b47c5e3,2773
+  - DRBG-0.5.5@sha256:3b8040bed356e2b63927a27fb6d5adbd19d70c9e1d1bb66111bbeb33e56900eb,2259
+  - cipher-aes128-0.7.0.6@sha256:6efdf4af08772b6c99e47ec7586bdc26deb33d8ca797c64affcb4bd7aaae9884,3413
