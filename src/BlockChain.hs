@@ -159,7 +159,7 @@ updateWithBlock (ForkMaxDiff maxdiff) target utxoPool newblock lb@(LivelyBlocks 
                         -- We recursively create a tree of blocks from FutureBlocks and put it into Livelyblocks in a place given by zipper.
                         let newtree = insertFutures future utxoPool'' newblock in
                         -- we put the tree with inserted blocks back into the list
-                        let newforest = map fst ts1 ++ [fromZipper $ case zipper of Zipper ts pl -> Zipper (newtree : ts) pl] ++ map fst ts2 in
+                        let newforest = map fst ts1 ++ [fromZipper $ insertTreeHere newtree zipper] ++ map fst ts2 in
                         -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                         let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
                         in BlockInserted (FixedBlocks (newfixed ++ fixed)) (LivelyBlocks (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed))
@@ -320,6 +320,9 @@ modify f (Zipper ts (Brother pl ls a rs)) = Zipper ts (Brother pl ls (f a) rs)
 
 insertHere :: a -> Zipper a -> Zipper a
 insertHere a (Zipper ts b) = Zipper (Tree a [] : ts) b
+
+insertTreeHere :: Tree a -> Zipper a -> Zipper a
+insertTreeHere t (Zipper ts b) = Zipper (t : ts) b
 
 -- Deletes a tree rooted where we're focused on. Focus jumps to parent.
 -- Returns Nothing if it's the root that is deleted and nothing is left. 

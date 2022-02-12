@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings  #-}
-module Wallet.Wallet where
+module Wallet.Statement where
+
 import BlockType (TXID, BlockReference, Transaction, BlockHeader (BlockHeader))
 import Hashing (HashOf(Hash), RawHash (RawHash))
 import Hasql.Statement (Statement (Statement))

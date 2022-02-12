@@ -29,3 +29,4 @@
   - Specify wallet functionality so that wallet can be run seperately but also plugged in in full node for collecting coins.
   - Investigate localhost not being resolved when run from "stack ghci".
   - Mining at the tip of LivelyBlocks. Validation as well (write correct, benchmark later?).
+  - Fix/Check bug: Catch up to blockchain appending blocks from peers, peer at a time, evolves blockchain innaturaly, if the first peer has a long list, but not exhaustive, blocks from others wont be appended. 
