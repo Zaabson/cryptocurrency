@@ -11,7 +11,7 @@ module FullNode where
 import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, answerBlockchainQuery, MsgHandler (MsgHandler), answerPing, receiveTransaction, TransactionQueue (TransactionQueue), toServerHandler)
 import Hashing (TargetHash, shash256, difficultyToTargetHash)
 import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader))
-import BlockChain (FixedBlocks (FixedBlocks, getFixedBlocks), LivelyBlocks (LivelyBlocks, root, forest), FutureBlocks (FutureBlocks), BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs)
+import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs)
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
@@ -143,8 +143,8 @@ mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} wai
         -- or LivelyBlocks root if LivelyBlocks is empty (then it is Genesis reference)
         getLastBlockReference :: STM (BlockReference, Integer)
         getLastBlockReference = do
-            lively@LivelyBlocks {root, forest} <- readLivelyBlocks blockchainState
-            FixedBlocks fixed <- readFixedBlocks blockchainState
+            lively@Lively {root, forest} <- readLivelyBlocks blockchainState
+            Fixed fixed <- readFixedBlocks blockchainState
             case getLastBlock lively of
                 -- LivelyBlocks is empty.
                 Nothing -> return (root,
@@ -219,7 +219,7 @@ addBlock forkMaxDiff targetHash (BlockchainData fixed lively future utxoPool) bl
     in BlockchainData fixed lively future utxoPool
 
 whatsNextBlock :: BlockchainData -> Integer
-whatsNextBlock (BlockchainData (FixedBlocks fixed) _ _ _) =
+whatsNextBlock (BlockchainData (Fixed fixed) _ _ _) =
     1 + case fixed of
             []  -> 0
             b:_ -> blockBlockHeight b
@@ -409,11 +409,11 @@ runFullNode config =
         initBlockchainState genesis fixed = atomically $ do
             fixed1 <- readTVar fixed
             BlockchainState genesis fixed 
-                <$> newTVar (LivelyBlocks {
+                <$> newTVar (Lively {
                         root=case fixed1 of
-                            FixedBlocks [] -> shash256 (Left genesis)
-                            FixedBlocks (b:bs) -> blockRef b, forest=[]})
-                <*> newTVar (FutureBlocks Map.empty)
+                            Fixed [] -> shash256 (Left genesis)
+                            Fixed (b:bs) -> blockRef b, forest=[]})
+                <*> newTVar (Future Map.empty)
                 <*> newTVar (collectUTXOs (UTXOPool Map.empty) (getFixedBlocks fixed1))
 
         initAppState :: BlockchainState -> TVar PeersSet -> IO AppState

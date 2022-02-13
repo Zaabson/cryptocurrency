@@ -110,6 +110,12 @@ data BlockHeader = BlockHeader {
 instance FromJSON BlockHeader
 instance ToJSON BlockHeader
 
+instance Eq BlockHeader where 
+    x == y = shash256 x == shash256 y
+
+instance Ord BlockHeader where 
+    compare x y = compare (shash256 x) (shash256 y)
+
 -- Needed to force hash crunching in mining.
 instance NFData BlockHeader
 
@@ -120,10 +126,10 @@ data Block = Block {
     } deriving (Show, Generic)
 
 instance Eq Block where 
-    x == y = shash256 (blockHeader x) == shash256 (blockHeader y)
+    x == y = blockHeader x == blockHeader y
 
 instance Ord Block where 
-    compare x y = compare (shash256 $ blockHeader x) (shash256 $ blockHeader y)
+    compare x y = compare (blockHeader x) (blockHeader y)
 
 instance FromJSON Block
 instance ToJSON Block

@@ -11,7 +11,7 @@ import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.Map as Map
 import qualified Codec.Crypto.RSA as RSA
 import BlockType
-import Hashing (HashOf(..), shash256, toRawHash, TargetHash(..))
+import Hashing (HashOf(..), shash256, toRawHash, TargetHash(..), RawHash (RawHash), shashBytes)
 import Data.Bifunctor (first)
 -- import BlockChain (LivelyBlocks(..), linkToChain)
 
@@ -165,12 +165,40 @@ validateNonce (TargetHash targetHash) blck = toRawHash (shash256 blck) <= target
 --         --                             Nothing -> False
 --         --                             Just _  -> True
 
+-- pairs elements in a list, pair by pair, duplicates the last element if the list is odd length 
+pairs :: [a] -> [(a, a)]
+pairs [] = []
+pairs [x] = [(x, x)]
+pairs (x:y:xs) = (x, y) : pairs xs 
+
+-- calculates a merkle root hash of a list by first hashing a transactions in a list
+-- and then pairing neighbouring hashes and combining them into single hash iteratively - until there's a single hash, root hash
+-- coinbase transaction is appended at the beginning
+merkleHash :: Coinbase -> [Transaction] -> RawHash
+merkleHash coinbase = map (shash256 >>> getHash) >>> 
+    ((coinbase |> shash256 |> getHash) :) >>> untilOneLeft pairAndHash >>> head >>> RawHash
+    where pairAndHash :: [B.ByteString] -> [B.ByteString]
+          pairAndHash = pairs >>> map (uncurry B.append >>> shashBytes)
+          untilOneLeft _ [x] = [x]
+          untilOneLeft f xs  = untilOneLeft f $ f xs
+
 -- TODO: maybe some searching through pool can be optimized combining validateCoinbasae and validateTransactions
 -- This possibly doesn't need to check linkToBlockchain <- done.
 validateBlock :: TargetHash -> UTXOPool -> Block -> (Bool, UTXOPool)
-validateBlock targetHash pool block@Block{..} = (txsOk && coinbaseOk && nonceOk, newPool)          -- && blockchainOk 
+validateBlock targetHash pool block@Block{..} = (txsOk && coinbaseOk && nonceOk && merkleOk, newPool)          -- && blockchainOk 
     where (txsOk, newPool) = validateBlockTransactions pool block
           coinbaseOk       = validateCoinbaseMoney pool block
           nonceOk          = validateNonce targetHash blockHeader
+          merkleOk         = validateMerkleHash block
 
 -- validateFirstBlock :: TargetHash 
+
+-- Validate what can be without utxoPool. Used by lightnode.
+-- Validates 
+-- partialValidateBlock :: TargetHash -> Block -> Bool
+-- partialValidateBlock targetHash block@Block{coinbaseTransaction=coinbase, transactions=txs,  ..} = nonceOk && merkleOk          -- && blockchainOk 
+--     where nonceOk          = validateNonce targetHash blockHeader
+--           merkleOk         = merkleHash coinbase txs == blockRootHash block 
+
+validateMerkleHash :: Block -> Bool
+validateMerkleHash block@Block{coinbaseTransaction=coinbase, transactions=txs,  ..} = merkleHash coinbase txs == blockRootHash block 

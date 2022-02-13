@@ -7,7 +7,7 @@ import Server (Address(Address), ServerHandler)
 import qualified Data.Sequence as Seq (Seq, (|>))
 import InMemory (HasLogging (logger), InMemoryRead (readMemoryIO), InMemory (modifyMemory), MonadAtomic (runAtomically))
 import BlockValidation (UTXOPool, validTransaction)
-import BlockChain (FixedBlocks(FixedBlocks), ForkMaxDiff)
+import BlockChain (Fixed(Fixed), FixedBlocks, ForkMaxDiff)
 import Data.List (find)
 import Hashing (TargetHash)
 import Node (getAddresses, PeersSet)
@@ -90,8 +90,8 @@ answerBlockchainQuery appState = MsgHandler $ \query -> do
         BlockAtHeight n -> do
             blocks <- readMemoryIO appState
             case blocks of
-                FixedBlocks [] -> return NoBlockFound
-                FixedBlocks (b : bs) ->
+                Fixed [] -> return NoBlockFound
+                Fixed (b : bs) ->
                     if blockBlockHeight b >= n then
                         case find (\x -> blockBlockHeight x == n) (b:bs) of
                             Just b -> do return (RequestedBlock b)
