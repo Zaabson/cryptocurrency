@@ -3,12 +3,13 @@
 module BlockChain where
 
 import Data.List (find, foldl1', foldl')
--- import Tree ( Zipper(..), Tree(..), getElem, fromZipper, dfs, insertHere )
--- import Tree ( Zipper(..), Tree(..), getElem, fromZipper, dfs, insertHere )
--- import Tree ( Zipper(..), Tree(..), getElem, fromZipper, dfs, insertHere )
--- import Tree ( Zipper(..), Tree(..), getElem, fromZipper, dfs, insertHere )
 import Hashing ( shash256, TargetHash, HashOf )
 import BlockType
+    ( blockBlockHeight,
+      blockPreviousHash,
+      Block(Block, transactions, blockHeader),
+      BlockHeader(previousHash),
+      BlockReference )
 import Data.Aeson (ToJSON, FromJSON)
 import GHC.Generics (Generic)
 import Data.Functor ( (<&>) )
@@ -80,27 +81,6 @@ fixBlocks maxdiff trees = go (max (h - maxdiff) 0) [] trees
         go n ls [Tree a ts] = go (n-1) (a : ls) ts
         go n ls trees = (ls, trees)
 
--- fixBlocks :: Integer -> Tree a -> ([a], Tree a)
--- fixBlocks maxdiff tree = go (height tree - maxdiff) [] tree
-
---     where
---         -- recurse on the tree collecting nodes, but collecting no more than given number
---         go 0 ls tree = (ls, tree)
---         go n ls (Tree a [t]) = go (n-1) (a : ls) t
---         go n ls tree = (ls, tree)
-
-
--- If a block can be appended to a block in LivelyBlocks, 
--- then append it, prune branches and move some of the older blocks from Lively to Fixed
--- updateWithBlock :: ForkMaxDiff ->  Block -> LivelyBlocks -> FixedBlocks -> (LivelyBlocks, FixedBlocks)
--- updateWithBlock (ForkMaxDiff maxdiff) newblock lb@(LivelyBlocks tree) fb@(FixedBlocks fixed) =
---     case insertToChain newblock tree of
---         Nothing    -> (lb, fb)
---         Just tree' ->
---             let (newfixed, tree'') = fixBlocks maxdiff $ prune maxdiff tree'
---             in (LivelyBlocks tree'', FixedBlocks (newfixed ++ fixed))
-
--- change type to encompass info on how it went
 
 data BlockchainUpdated b
     --                         newfixed
@@ -180,36 +160,6 @@ updateWithBlockGeneric todo1 todo2 (ForkMaxDiff maxdiff) target newblock lb@(Liv
                     -- calculate UTXOPool in a moment in blockchain where the new block appends 
                     todo2 ts1 ts2 zipper
             (_, (_, Nothing) : _) -> error "Break on (isjust . snd) - doesn't happen"
-
-    where
-
-        -- We take zipper focused on newly added block. Check whether there's block waiting in the futures to be appended here.
-        -- If so - append it and append blocks from futures recursively. 
-        insertFutures :: Map.Map BlockReference (Set.Set Block)    -- future blocks, keys are blockPreviousHash'es
-                      -> UTXOPool                      -- utxoPool up to the root block including
-                      -> Block                         -- Block to put in the root 
-                      -> Tree Block                    -- Tree made of blocks from FutureBlocks Map rooted in the given block
-        insertFutures futures utxoPool block = case Map.lookup (blockRef block) futures of
-            Just blocks ->
-
-                Tree block $ foldl' (
-                    \bs b ->
-                        let (valid, utxoPool') = validateBlock target utxoPool b in
-                        if valid then
-                            insertFutures futures utxoPool' b : bs
-                        else
-                            bs
-                    ) [] blocks
-
-            Nothing -> Tree block []
-
-        pathFromRootA :: Place a -> [a]-> [a]
-        pathFromRootA (Root bl) acc               = bl : acc
-        pathFromRootA (Brother parent _ bl _) acc = pathFromRootA parent (bl : acc)
-
-        -- returns a list of blocks on a path starting from root and ending on given Zipper
-        pathFromRoot :: Zipper a -> [a]
-        pathFromRoot (Zipper _ pl) = pathFromRootA pl []
 
 updateWithBlockHeader :: ForkMaxDiff                   -- constant specifying which forks can be safely discarded - the ones strictly shorter than maxdiff
                  -> TargetHash                    -- constant specifying mining difficulty
