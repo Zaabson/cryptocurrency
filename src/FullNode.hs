@@ -22,7 +22,7 @@ import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import qualified Data.Map.Strict as Map
 import Control.Monad (forever, join, void, liftM2, (>=>))
-import Data.Foldable (toList)
+import Data.Foldable (toList, foldl')
 import Control.Concurrent.Async (race_, async, concurrently_, waitBoth)
 import Control.Concurrent (threadDelay, newMVar, forkIO)
 import Data.Time (getCurrentTime)
@@ -34,7 +34,7 @@ import Control.Exception (evaluate, onException, bracket)
 import MessageType (Message(BlockMessage), ReceivedBlock (ReceivedBlock), Answer (BlockAnswer), ReceivedTransaction (ReceivedTransaction))
 import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
 import Server (Address(Address), server)
-import InMemory (logger, HasLogging, InMemory (readMemory, writeMemory, modifyMemory), runAtomically, InMemoryRead)
+import InMemory (logger, HasLogging, InMemory (readMemory, writeMemory, modifyMemory, modifyMemoryIO), runAtomically, InMemoryRead (readMemoryIO))
 
 data Config = Config {
         blockchainFilepath :: FilePath,
@@ -187,7 +187,8 @@ mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} wai
                 utxoPool <- readUTXOPool blockchainState
 
                 case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
-                    BlockInserted fixed' lively' utxoPool' -> do
+                    -- BlockInserted fixed' lively' utxoPool' -> do
+                    BlockInserted lively' newfixed -> do
                         writeLivelyBlocks blockchainState lively'
                         writeFixedBlocks blockchainState fixed'
                         writeUTXOPool blockchainState utxoPool'
@@ -207,7 +208,7 @@ addBlock1 :: ForkMaxDiff -> TargetHash -> (UTXOPool, FixedBlocks, LivelyBlocks, 
 addBlock1 forkMaxDiff targetHash (utxoPool, fixed, lively, future) block =
     -- try to link a new block to one of the recent blocks
     case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future  of
-        BlockInserted fixed' lively' utxoPool' -> (utxoPool', fixed', lively', future)
+        BlockInserted lively' newfixed -> (newfixed2UTXOPoolUpdate newfixed utxoPool, newfixed ++ fixed, lively', future)
         BLockInsertedLinksToRoot lively'       -> (utxoPool, fixed, lively', future)
         FutureBlock future'   -> (utxoPool, fixed, lively, future')
         _                     -> (utxoPool, fixed, lively, future)
@@ -235,8 +236,10 @@ fullNodeCatchUpToBlockchain :: (InMemory.HasLogging appState,
     InMemory.InMemory appState m BlockchainData,
     InMemory.InMemory appState m PeersSet) =>
     ForkMaxDiff -> TargetHash -> appState -> IO ()
-fullNodeCatchUpToBlockchain forkMaxDiff targetHash = catchUpToBlockchain forkMaxDiff targetHash (addBlock forkMaxDiff targetHash) whatsNextBlock
-
+fullNodeCatchUpToBlockchain forkMaxDiff targetHash appState = do
+    blocks <- catchUpToBlockchain forkMaxDiff targetHash (fmap whatsNextBlock . readMemoryIO) appState
+    modifyMemoryIO appState (\bs -> foldl' (addBlock forkMaxDiff targetHash) bs blocks)    
+     
 -- Validate the block, based on outcome do:
 -- - add it to blockchain and broadcast further if it's a new block
 -- - add to blockchain but don't broadcast

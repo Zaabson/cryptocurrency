@@ -8,9 +8,9 @@ create table transaction (
     txData jsonb not null,
     txStatus transactionStatus not null
     -- check ( txStatus != 'validated' or (txblockid is not null) )
-)
+);
 
 create table fixedHeader (
     blockid bytea primary key,
     headerData jsonb not null
-)
+);

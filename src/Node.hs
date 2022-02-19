@@ -32,9 +32,14 @@ import System.IO (withFile, hPutStrLn, hFlush, stdin, stdout, openFile, hClose, 
 import Control.Concurrent.STM (newTQueue, writeTQueue)
 import Control.Concurrent.STM.TMQueue
 import Control.Exception (bracket, finally)
+import Data.Universe.Helpers (interleave)
 
 -- Collects functionality common between fullnode and wallet lightnode.
 -- 
+
+class AppendFixed appState m b where
+    appendFixed :: appState -> [b] -> m () 
+
 
 sendMsg :: Message -> Address -> IO ()
 sendMsg msg = send (encode msg)
@@ -189,16 +194,30 @@ instance (GEqC f, GEqC g) => GEqC (f :+: g) where
   geqConstr _ _ = False
 
 
-catchUpToBlockchain :: (HasLogging appState, InMemory appState m blockchain, InMemory appState m PeersSet)
+catchUpToBlockchain :: (HasLogging appState, InMemory appState m PeersSet)
     => ForkMaxDiff
     -> TargetHash
-    -> (blockchain -> Block -> blockchain)   -- How to update blockchain with a new block
-    -> (blockchain -> Integer)               -- For the initial blockchain, how to ask for the next block of interest. TODO: generalize to blockchain -> ContactQuery
+    -- -> (blockchain -> Block -> blockchain)   -- How to update blockchain with a new block
+    -> (appState -> IO Integer)               -- For the initial blockchain, how to ask for the next block of interest. TODO: generalize to blockchain -> ContactQuery
     -> appState
-    -> IO ()
-catchUpToBlockchain forkMaxDiff targetHash update whatsNextBlock appState = do
-    blocks <- queryForBlocks
-    modifyMemoryIO appState (\bs -> foldl' update bs blocks)
+    -> IO [Block]
+catchUpToBlockchain forkMaxDiff targetHash whatsNextBlock appState = do
+    -- get the length of the blockchain we have, we ask for the next block
+    n <- whatsNextBlock appState
+    -- n <- whatsNextBl 4ock
+
+    -- get random selection of 1 to 8 addresses
+    addresses <- getAddresses <$> readMemoryIO appState
+    maddresses <- sampleIO (max 1 (min 8 (length addresses))) addresses
+
+    case maddresses of
+        Nothing -> do
+            logger appState "Failed to query for new blocks. Not enough peers."
+            return []
+        Just addresses -> do
+            logger appState "Queried for new blocks."
+            -- interleave, so that blocks are added in order
+            interleave <$> forConcurrently addresses (keepQuerying n)
 
     where
         -- TODO: refactor with broadcastWithReply 
@@ -210,25 +229,6 @@ catchUpToBlockchain forkMaxDiff targetHash update whatsNextBlock appState = do
                 case manswer of
                     Just (BlockchainQueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
                     _ -> return [] ) address
-
-        queryForBlocks :: IO [Block]
-        queryForBlocks = do
-            -- get the length of the blockchain we have, we ask for the next block
-            n <- whatsNextBlock <$> readMemoryIO appState
-            -- n <- whatsNextBl 4ock
-
-            -- get random selection of 1 to 8 addresses
-            addresses <- getAddresses <$> readMemoryIO appState
-            maddresses <- sampleIO (max 1 (min 8 (length addresses))) addresses
-
-            case maddresses of
-                Nothing -> do
-                    logger appState "Failed to query for new blocks. Not enough peers."
-                    return []
-                Just addresses -> do
-                    logger appState "Queried for new blocks."
-                    concat <$> forConcurrently addresses (keepQuerying n)
-
 
 
 data LoggingMode = ToFile FilePath | ToStdout | ToStderr | Silent deriving Generic

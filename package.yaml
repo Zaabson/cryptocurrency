@@ -25,9 +25,13 @@ dependencies:
   - sampling
   - deepseq
   - hasql
+  - hasql-transaction
+  - hasql-pool
   - vector
   - text
   - contravariant-extras
+  - universe-base
+  - stm-io-hooks
 
 library:
   source-dirs: src

@@ -102,8 +102,9 @@ fixBlocks maxdiff trees = go (max (h - maxdiff) 0) [] trees
 
 -- change type to encompass info on how it went
 
-data BlockchainUpdated b f
-    = BlockInserted (Fixed b) (Lively b) f
+data BlockchainUpdated b
+    --                         newfixed
+    = BlockInserted (Lively b) [b]
     | BLockInsertedLinksToRoot (Lively b)
     | FutureBlock (Future b)
     | BlockAlreadyInserted
@@ -126,6 +127,10 @@ instance LinksToChain BlockHeader where
     prevRef = previousHash
     thisRef = shash256 . Right
 
+-- Updates utxoPool with given new fixed blocks.
+-- Pass newfixed in the order returned from updateWithBlock.
+newfixed2UTXOPoolUpdate :: [Block] -> UTXOPool -> UTXOPool 
+newfixed2UTXOPoolUpdate newfixed utxoPool = collectUTXOs utxoPool (reverse newfixed)
 
 -- If a block can be appended to a block in LivelyBlocks, 
 -- then append it, prune branches and move some of the older blocks from Lively to Fixed
@@ -135,7 +140,7 @@ updateWithBlockGeneric ::
     -> ([(Tree b, Maybe (Zipper b))]
                   -> [(Tree b, Maybe (Zipper b))]
                   -> Zipper b
-                  -> BlockchainUpdated b f)
+                  -> BlockchainUpdated b)
     -- -> (b -> BlockReference)     -- get reference to previous block
     -- -> (b -> BlockReference)     -- get this block reference
     -> ForkMaxDiff                   -- constant specifying which forks can be safely discarded - the ones strictly shorter than maxdiff
@@ -143,10 +148,10 @@ updateWithBlockGeneric ::
     -- -> UTXOPool                      -- pool of utxos from FixedBlocks
     -> b                         -- block to be validated and inserted into LivelyBlocks
     -> Lively b                  -- recent chains
-    -> Fixed b                   -- older chain
+    -- -> Fixed b                   -- older chain
     -> Future b                  -- blocks that might link to blocks we haven't received yet
-    -> BlockchainUpdated b f                      -- blockchain updated with the block
-updateWithBlockGeneric todo1 todo2 (ForkMaxDiff maxdiff) target newblock lb@(Lively {root ,forest}) fb@(Fixed fixed) (Future future) =
+    -> BlockchainUpdated b                      -- blockchain updated with the block
+updateWithBlockGeneric todo1 todo2 (ForkMaxDiff maxdiff) target newblock lb@(Lively {root ,forest}) (Future future) =
     -- Does block link directly to root?
     if prevRef newblock == root then
         -- Is it already present?
@@ -212,12 +217,12 @@ updateWithBlockHeader :: ForkMaxDiff                   -- constant specifying wh
                  -> Lively BlockHeader                   -- recent chains
                  -> Fixed BlockHeader           -- older chain
                  -> Future BlockHeader          -- blocks that might link to blocks we haven't received yet
-                 -> BlockchainUpdated BlockHeader [BlockHeader]                       -- blockchain updated with the block
+                 -> BlockchainUpdated BlockHeader                       -- blockchain updated with the block
 updateWithBlockHeader forkdiff@(ForkMaxDiff maxdiff) target newblock lb@(Lively {root ,forest}) fixb@(Fixed fixed) ft@(Future future) = 
     updateWithBlockGeneric
         validateNonce
         todo 
-        forkdiff target newblock lb fixb ft
+        forkdiff target newblock lb ft
     where 
         todo ts1 ts2 zipper =
             -- calculate UTXOPool in a moment in blockchain where the new block appends 
@@ -231,7 +236,7 @@ updateWithBlockHeader forkdiff@(ForkMaxDiff maxdiff) target newblock lb@(Lively 
                 let newforest = map fst ts1 ++ [fromZipper $ insertTreeHere newtree zipper] ++ map fst ts2 in
                 -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                 let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
-                in BlockInserted (Fixed (newfixed ++ fixed)) (Lively (maybe root thisRef (safeHead (newfixed ++ fixed))) lively) newfixed
+                in BlockInserted (Lively (maybe root thisRef (safeHead (newfixed ++ fixed))) lively) newfixed
             else
                 BlockInvalid
 
@@ -243,12 +248,12 @@ updateWithBlock :: ForkMaxDiff                   -- constant specifying which fo
                  -> LivelyBlocks                  -- recent chains
                  -> FixedBlocks                   -- older chain
                  -> FutureBlocks                  -- blocks that might link to blocks we haven't received yet
-                 -> BlockchainUpdated Block UTXOPool                       -- blockchain updated with the block
+                 -> BlockchainUpdated Block                       -- blockchain updated with the block
 updateWithBlock forkdiff@(ForkMaxDiff maxdiff) target utxoPool newblock lb@(Lively {root ,forest}) fixb@(Fixed fixed) ft@(Future future) = 
     updateWithBlockGeneric 
         (\t b -> fst $ validateBlock t utxoPool b)
         todo 
-        forkdiff target newblock lb fixb ft
+        forkdiff target newblock lb ft
     where
         todo ts1 ts2 zipper = 
             -- calculate UTXOPool in a moment in blockchain where the new block appends 
@@ -264,7 +269,7 @@ updateWithBlock forkdiff@(ForkMaxDiff maxdiff) target utxoPool newblock lb@(Live
                 let newforest = map fst ts1 ++ [fromZipper $ insertTreeHere newtree zipper] ++ map fst ts2 in
                 -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                 let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
-                in BlockInserted (Fixed (newfixed ++ fixed)) (Lively (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed))
+                in BlockInserted (Lively (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) newfixed
             else
                 BlockInvalid
 
@@ -279,7 +284,7 @@ updateWithBlock1 :: ForkMaxDiff                   -- constant specifying which f
                  -> LivelyBlocks                  -- recent chains
                  -> FixedBlocks                   -- older chain
                  -> FutureBlocks                  -- blocks that might link to blocks we haven't received yet
-                 -> BlockchainUpdated Block UTXOPool                       -- blockchain updated with the block
+                 -> BlockchainUpdated Block                       -- blockchain updated with the block
 updateWithBlock1 (ForkMaxDiff maxdiff) target utxoPool newblock lb@(Lively {root ,forest}) fb@(Fixed fixed) (Future future) =
     -- Does block link directly to root?
     if blockPreviousHash newblock == root then
@@ -319,7 +324,7 @@ updateWithBlock1 (ForkMaxDiff maxdiff) target utxoPool newblock lb@(Lively {root
                         let newforest = map fst ts1 ++ [fromZipper $ insertTreeHere newtree zipper] ++ map fst ts2 in
                         -- Said tree is hung (hanged?) in the LivelyBlocks tree and a resulting tree is pruned and old blocks are moved to FixedBlocks.
                         let (newfixed, lively) = fixBlocks maxdiff $ prune maxdiff newforest
-                        in BlockInserted (Fixed (newfixed ++ fixed)) (Lively (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) (collectUTXOs utxoPool (reverse newfixed))
+                        in BlockInserted (Lively (maybe root blockRef (safeHead (newfixed ++ fixed))) lively) newfixed
                     else
                         BlockInvalid
             (_, (_, Nothing) : _) -> error "Break on (isjust . snd) - doesn't happen"

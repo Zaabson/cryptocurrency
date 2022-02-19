@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Wallet.Statement where
 
 import BlockType (TXID, BlockReference, Transaction, BlockHeader (BlockHeader))
@@ -11,37 +12,14 @@ import Data.Aeson (FromJSON, decodeStrict', eitherDecodeStrict', ToJSON, encode,
 import Data.Bifunctor (first)
 import Data.Text (pack)
 import Data.Functor.Contravariant (contramap)
-import Data.Coerce (coerce)
+import Data.Coerce (coerce, Coercible)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.ByteString (ByteString)
 import Data.Int (Int64)
 import Contravariant.Extras (contrazip2)
+import Data.Foldable (foldl')
+import Wallet.Type (StoredTransaction (StoredTransaction), Status (Validated, Waiting, Discarded))
 
--- Decision: Let's store transactions rather than utxos. We lose less information and its trivial to get utxos from tx.
-
-data Status
-    = Validated -- block of td already in fixed  
-    | Waiting   -- still not in fixed 
-    | Discarded -- optional usage for when we observe tx being thrown from lively.
-    -- ^ another option is to use versioning with blockheight 
-
-data UpdateStatus
-    = Fixed { getBlockRef :: BlockReference }
-    | Discard { getBockRef :: BlockReference}
-
-
--- 
-data StoredTransaction = StoredTransaction {
-    txid :: TXID,
-    txBlockId :: BlockReference,
-    txData :: Transaction,
-    txStatus :: Status
-}
-
-data StoredBlockHeader = StoredBlockHeader {
-    blockid :: BlockReference,
-    headerData :: BlockHeader
-}
 
 jsonb2aeson :: FromJSON a => D.Value a
 jsonb2aeson = D.jsonbBytes (first pack . eitherDecodeStrict')
@@ -55,8 +33,9 @@ rowHash = coerceHash <$> D.column (D.nonNullable D.bytea)
         coerceHash :: ByteString -> HashOf a
         coerceHash = coerce
 
-encodeHash :: E.Params BlockReference
-encodeHash = coerce <$> E.param . E.nonNullable $ E.bytea
+-- encodeHash :: E.Params BlockReference
+encodeHash :: Coercible b ByteString =>  E.Params b
+encodeHash = contramap coerce . E.param . E.nonNullable $ E.bytea
 
 txDecoder :: D.Row StoredTransaction
 txDecoder = StoredTransaction
@@ -90,10 +69,37 @@ selectTxByBlock = Statement sql encodeHash (D.rowVector txDecoder) True
     where 
         sql = "select (txId, txBlockId, txData, txStatus) from transaction where txBlockId = $1"
 
+selectTxIdByBlock :: Statement BlockReference (Vector TXID)
+selectTxIdByBlock = Statement sql encodeHash (D.rowVector rowHash) True
+    where 
+        sql = "select txId from transaction where txBlockId = $1"
 
--- Update txs statuses for transactions from block
-updateTx :: Statement (BlockReference, Status) Int64
-updateTx = Statement sql (contrazip2 encodeHash encodeStatus) D.rowsAffected True
+updateTxStatus :: Statement (Status, TXID) ()   
+updateTxStatus = Statement sql (contrazip2 encodeStatus encodeHash) D.noResult True
     where 
         sql = "update transaction set txStatus = $2 where txBlockId = $1"
 
+
+-- Update txs statuses for transactions from block
+-- updateTx :: Statement (BlockReference, Status) Int64
+-- updateTx = Statement sql (contrazip2 encodeHash encodeStatus) D.rowsAffected True
+--     where 
+--         sql = "update transaction set txStatus = $2 where txBlockId = $1"
+
+updateTxStatusMany :: Statement (Status, Vector TXID) ()
+updateTxStatusMany = Statement sql (contrazip2 encodeStatus (vector $ contramap coerce E.bytea)) D.noResult True
+    where
+        sql = "update transaction set txStatus = $1 from unnest($2) as t(num) where t.num = txId"
+        vector =
+            E.param .
+            E.nonNullable .
+            E.array .
+            E.dimension foldl' .
+            E.element .
+            E.nonNullable
+
+addFixedBlockHeader :: Statement (BlockReference , BlockHeader) ()
+addFixedBlockHeader = Statement sql e D.noResult True
+    where 
+        sql = "insert into fixedHeader values ($1, $2)"
+        e = contrazip2 encodeHash (E.param . E.nonNullable $ aeson2jsonb)

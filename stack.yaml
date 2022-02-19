@@ -6,3 +6,4 @@ packages:
 extra-deps:
   - DRBG-0.5.5@sha256:3b8040bed356e2b63927a27fb6d5adbd19d70c9e1d1bb66111bbeb33e56900eb,2259
   - cipher-aes128-0.7.0.6@sha256:6efdf4af08772b6c99e47ec7586bdc26deb33d8ca797c64affcb4bd7aaae9884,3413
+  - stm-io-hooks-1.1.2@sha256:69d0967a74888d96dc55f060bd5fde071e54456252d60c1a0ab131aed087f287,1157

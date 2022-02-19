@@ -32,3 +32,4 @@
   - Fix/Check bug: Catch up to blockchain appending blocks from peers, peer at a time, evolves blockchain innaturaly, if the first peer has a long list, but not exhaustive, blocks from others wont be appended.
   - Put Merkle.hs into BlockValidation.  
   - Check BlockValidation once more.
+  - Consider merging InMemory _ (Lively/Fixed/Future) into already existing InMemory _ BlockchainData

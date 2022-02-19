@@ -202,3 +202,8 @@ validateBlock targetHash pool block@Block{..} = (txsOk && coinbaseOk && nonceOk 
 
 validateMerkleHash :: Block -> Bool
 validateMerkleHash block@Block{coinbaseTransaction=coinbase, transactions=txs,  ..} = merkleHash coinbase txs == blockRootHash block 
+
+-- For use in light node. 
+validateNonceAndMerkle :: TargetHash -> Block -> Bool
+validateNonceAndMerkle targetHash block = 
+    validateNonce targetHash (blockHeader block) && validateMerkleHash block
