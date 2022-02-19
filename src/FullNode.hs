@@ -11,11 +11,11 @@ module FullNode where
 import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, answerBlockchainQuery, MsgHandler (MsgHandler), answerPing, receiveTransaction, TransactionQueue (TransactionQueue), toServerHandler)
 import Hashing (TargetHash, shash256, difficultyToTargetHash)
 import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader))
-import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs)
+import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs, newfixed2UTXOPoolUpdate)
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
-import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active))
+import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed))
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
@@ -182,16 +182,16 @@ mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} wai
             join . atomically $ do
                 -- Note that this atomical operation is time-consuming.
                 lively   <- readLivelyBlocks blockchainState
-                fixed    <- readFixedBlocks blockchainState
+                fixed@(Fixed fixedb) <- readFixedBlocks blockchainState
                 future   <- readFutureBlocks blockchainState
                 utxoPool <- readUTXOPool blockchainState
 
-                case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
+                case updateWithBlock forkMaxDiff targetHash utxoPool block lively future of
                     -- BlockInserted fixed' lively' utxoPool' -> do
                     BlockInserted lively' newfixed -> do
                         writeLivelyBlocks blockchainState lively'
-                        writeFixedBlocks blockchainState fixed'
-                        writeUTXOPool blockchainState utxoPool'
+                        writeFixedBlocks blockchainState (Fixed $ newfixed ++ fixedb)
+                        writeUTXOPool blockchainState (newfixed2UTXOPoolUpdate newfixed utxoPool)
                         return $
                             -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
                             broadcastAndUpdatePeers peers (BlockMessage block) (BlockAnswer ReceivedBlock)
@@ -205,10 +205,10 @@ mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} wai
 
 -- Update Blockchain with the addtion of a given block.
 addBlock1 :: ForkMaxDiff -> TargetHash -> (UTXOPool, FixedBlocks, LivelyBlocks, FutureBlocks) -> Block -> (UTXOPool, FixedBlocks, LivelyBlocks, FutureBlocks)
-addBlock1 forkMaxDiff targetHash (utxoPool, fixed, lively, future) block =
+addBlock1 forkMaxDiff targetHash (utxoPool, fixed@(Fixed fixedb), lively, future) block =
     -- try to link a new block to one of the recent blocks
-    case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future  of
-        BlockInserted lively' newfixed -> (newfixed2UTXOPoolUpdate newfixed utxoPool, newfixed ++ fixed, lively', future)
+    case updateWithBlock forkMaxDiff targetHash utxoPool block lively future  of
+        BlockInserted lively' newfixed -> (newfixed2UTXOPoolUpdate newfixed utxoPool, Fixed (newfixed ++ fixedb), lively', future)
         BLockInsertedLinksToRoot lively'       -> (utxoPool, fixed, lively', future)
         FutureBlock future'   -> (utxoPool, fixed, lively, future')
         _                     -> (utxoPool, fixed, lively, future)
@@ -246,27 +246,26 @@ fullNodeCatchUpToBlockchain forkMaxDiff targetHash appState = do
 -- - add to future blocks
 -- - ignore if invalid
 -- receiveBlock :: ForkMaxDiff -> TargetHash -> BlockchainState -> MsgHandler Block ReceivedBlock
-receiveBlock :: (HasLogging tvar, InMemory tvar m UTXOPool,
-    InMemory tvar m PeersSet, InMemory tvar m BlockchainData,
-    InMemory tvar m LivelyBlocks, InMemory tvar m FixedBlocks,
-    InMemory tvar m FutureBlocks) =>
-    ForkMaxDiff -> TargetHash -> tvar -> MsgHandler Block ReceivedBlock
+receiveBlock :: (HasLogging appState, InMemory appState m UTXOPool,
+    InMemory appState m PeersSet, InMemory appState m BlockchainData,
+    InMemory appState m LivelyBlocks,
+    InMemory appState m FutureBlocks, AppendFixed appState m Block) =>
+    ForkMaxDiff -> TargetHash -> appState -> MsgHandler Block ReceivedBlock
 receiveBlock forkMaxDiff targetHash appState = MsgHandler $ \block -> do
     -- do the validation etc concurrently not to hold a connection for long
 
     forkIO . join . runAtomically $ do
         -- Note that this atomical operation is time-consuming. TODO: Benchmark how big of a problem that is.
         lively   <- readMemory appState
-        fixed    <- readMemory appState
         future   <- readMemory appState
         utxoPool <- readMemory appState
 
         -- try to link a new block to one of the recent blocks
-        case updateWithBlock forkMaxDiff targetHash utxoPool block lively fixed future of
-            BlockInserted fixed' lively' utxoPool' -> do
+        case updateWithBlock forkMaxDiff targetHash utxoPool block lively future of
+            BlockInserted lively' newfixed -> do
                 writeMemory appState lively'
-                writeMemory appState fixed'
-                writeMemory appState utxoPool'
+                appendFixed appState newfixed
+                writeMemory appState (newfixed2UTXOPoolUpdate newfixed utxoPool)
                 return $ do
                     logger appState "handler: Received block was inserted into chain."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
@@ -338,17 +337,20 @@ instance InMemory AppState STM BlockchainData where
     readMemory appState = BlockchainData <$> readMemory appState <*> readMemory appState <*> readMemory appState <*> readMemory appState
     writeMemory appState (BlockchainData a b c d) = writeMemory appState a >> writeMemory appState b >> writeMemory appState c >> writeMemory appState d
 
+instance AppendFixed AppStatePlusLogging STM Block where
+    appendFixed appState newfixed = modifyMemory appState ( Fixed . (newfixed ++ ) . getFixedBlocks)
+
 -- MessageHandler for full node. Describes actions on every type of incoming message.
 -- 
 fullNodeHandler :: (HasLogging appState,
  InMemory
    appState m UTXOPool,
     InMemory appState m PeersSet,
-    InMemory appState m FixedBlocks,
+    InMemory appState m FixedBlocks,    -- for now used by answerBlockchainQuery, consider  
     InMemory appState m TransactionQueue,
     InMemory appState m BlockchainData,
     InMemory appState m LivelyBlocks,
-    InMemory appState m FutureBlocks) =>
+    InMemory appState m FutureBlocks, AppendFixed appState m Block) =>
     ForkMaxDiff -> TargetHash -> appState -> MessageHandler
 fullNodeHandler forkMaxDiff targetHash =
     combineHandlers (const answerPing) (receiveBlock forkMaxDiff targetHash)  receiveTransaction answerBlockchainQuery answerContactQuery
