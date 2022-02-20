@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Wallet.DBPool where
 
@@ -13,6 +14,8 @@ import Control.Exception (bracket)
 import Hasql.Connection (settings)
 import Control.Monad ((>=>))
 import System.Exit (exitFailure)
+import GHC.Generics (Generic)
+import Data.Aeson (ToJSON, FromJSON)
 
 data ConnectionSettings = ConnectionSettings {
     host :: ByteString,
@@ -20,7 +23,12 @@ data ConnectionSettings = ConnectionSettings {
     user :: ByteString,
     password :: ByteString,
     database :: ByteString
-}
+} deriving (Generic)
+
+instance ToJSON ConnectionSettings
+instance FromJSON ConnectionSettings
+
+
 
 data PoolSettings = PoolSettings {
     poolSize :: Int,

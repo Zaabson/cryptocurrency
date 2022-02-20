@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Wallet.Wallet where 
+module Wallet.Node where 
 
 import MessageHandlers (MessageHandler, ignoreBlockchainQuery, ignoreTransaction, combineHandlers, answerPing, answerContactQuery, MsgHandler (MsgHandler))
 import MessageType (Answer (BlockAnswer), ReceivedBlock (ReceivedBlock), Message (BlockMessage))

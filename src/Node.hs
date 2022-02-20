@@ -244,18 +244,18 @@ instance FromJSON LoggingMode
 -- walletconfig = same
 
 -- this is some option, dont stick to it 
-class LoadConfig c a where
-    load :: c -> IO a
+-- class LoadConfig c a where
+--     load :: c -> IO a
 
--- ^ this is general, but for the ones below consider sticking with concrete type. (then main config could be made as record of smaller configs and thats fine) 
+-- -- ^ this is general, but for the ones below consider sticking with concrete type. (then main config could be made as record of smaller configs and thats fine) 
 
-class ProtocolConfig c where
-    getTargetHash :: c -> TargetHash
-    getForkMaxDiff :: c -> ForkMaxDiff
+-- class ProtocolConfig c where
+--     getTargetHash :: c -> TargetHash
+--     getForkMaxDiff :: c -> ForkMaxDiff
 
-class NodeConfig c where
-    getPort :: c -> ServiceName
-    getLoggingMode :: c -> LoggingMode
+-- class NodeConfig c where
+--     getPort :: c -> ServiceName
+--     getLoggingMode :: c -> LoggingMode
 
 -- data ProtocolConfig = ProtocolConfig {
 --     targetHash :: TargetHash,
