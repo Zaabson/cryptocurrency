@@ -103,3 +103,8 @@ addFixedBlockHeader = Statement sql e D.noResult True
     where 
         sql = "insert into fixedHeader values ($1, $2)"
         e = contrazip2 encodeHash (E.param . E.nonNullable $ aeson2jsonb)
+
+selectFixedCount :: Statement () Int64
+selectFixedCount = Statement sql E.noParams (D.singleRow . D.column . D.nonNullable $ D.int8) True 
+    where
+        sql = "select count(*) from fixedHeader"

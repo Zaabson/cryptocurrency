@@ -11,7 +11,7 @@ import Server
 import Control.Concurrent.STM
 import MessageType
 import Control.Concurrent.Async (forConcurrently_, forConcurrently, Async, async, wait, withAsync)
-import Control.Monad (when, void, forever)
+import Control.Monad (when, void, forever, (>=>))
 import Data.Function (on)
 import Client (send, sendToAll, sendAndReceive)
 import BlockChain (ForkMaxDiff)

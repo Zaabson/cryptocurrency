@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Wallet.Node where 
+module Wallet.Node where
 
 import MessageHandlers (MessageHandler, ignoreBlockchainQuery, ignoreTransaction, combineHandlers, answerPing, answerContactQuery, MsgHandler (MsgHandler))
 import MessageType (Answer (BlockAnswer), ReceivedBlock (ReceivedBlock), Message (BlockMessage))
@@ -11,7 +11,7 @@ import Node (PeersSet, broadcastAndUpdatePeers, catchUpToBlockchain, AppendFixed
 import BlockChain (BlockchainUpdated(BlockInserted, FutureBlock, BlockAlreadyInserted, BlockInvalid, BLockInsertedLinksToRoot), ForkMaxDiff, updateWithBlockHeader, Fixed (Fixed), Lively (Lively), Future (Future))
 import Control.Concurrent (forkIO)
 import Control.Monad (join)
-import InMemory (runAtomically, HasLogging (logger), InMemory (writeMemory, readMemory), InMemoryRead (readMemoryIO))
+import InMemory (runAtomically, HasLogging (logger), InMemory (writeMemory, readMemory, modifyMemory), InMemoryRead (readMemoryIO))
 import Hashing (TargetHash, shash256)
 import qualified Data.Set as Set
 import BlockValidation (validateNonceAndMerkle)
@@ -21,7 +21,8 @@ import Hasql.Session (Session)
 import Hasql.Transaction.Sessions (transaction, IsolationLevel (Serializable), Mode (Write))
 import BlockCreation (blockRef)
 import Control.Concurrent.Async (forConcurrently_)
-import Wallet.DBPool (HasDB (execute))
+import Wallet.DBPool (HasDB (executeDB))
+import Data.Int (Int64)
 
 
 -- Blockheight is kept in coinbase, absent in blockheader.
@@ -36,21 +37,21 @@ whatsNextBlock appState = do
 -- If valid return a db session updating status to validated for all tracked transactions from the block 
 -- and adding the block to database. 
 aknowledgeFixedBlock :: TargetHash -> Block -> Maybe (Session ())
-aknowledgeFixedBlock target block = 
-    if validateNonceAndMerkle target block then 
+aknowledgeFixedBlock target block =
+    if validateNonceAndMerkle target block then
         let txset = Set.fromList (map (shash256 . Right) $ transactions block) in
             -- Only DB
             Just $ transaction Serializable Write $ do
-                updateStatusByBlock (blockRef block) (`Set.member` txset) Validated 
+                updateStatusByBlock (blockRef block) (`Set.member` txset) Validated
                 addFixedBlockHeader (blockHeader block)
-    else 
-        Nothing 
+    else
+        Nothing
 
 -- Length of fixedBlocks, will probably be kept in TVar.
 -- In fullNode it was just read from the last fixed block.
 -- But height is stored in coinbase (so that coinbase txs hash differently in each block)
 -- so a light node doesn't know fixedBlocks height if it doesn't store this info.
-newtype FixedLength = FixedLength {getFixedLength :: Integer}
+newtype FixedLength = FixedLength {getFixedLength :: Int64}
     deriving (Num, Eq, Ord)
 
 lightNodeCatchUpToBlockchain ::  (HasLogging appState,
@@ -59,8 +60,8 @@ lightNodeCatchUpToBlockchain ::  (HasLogging appState,
         InMemory appState m PeersSet)
     =>  ForkMaxDiff -> TargetHash -> appState -> IO ()
 lightNodeCatchUpToBlockchain forkMaxDiff targetHash appState = do
-    blocks <- catchUpToBlockchain forkMaxDiff targetHash ( fmap (getFixedLength . (+ FixedLength 1)) . readMemoryIO) appState
-    forConcurrently_ blocks $ maybe (return ()) (execute appState) . aknowledgeFixedBlock targetHash
+    blocks <- catchUpToBlockchain forkMaxDiff targetHash ( fmap (toInteger . getFixedLength . (+ FixedLength 1)) . readMemoryIO) appState
+    forConcurrently_ blocks $ maybe (return ()) (executeDB appState) . aknowledgeFixedBlock targetHash
 
 receiveBlockLight :: (HasLogging appState,
     InMemory appState m (Lively BlockHeader),  -- STM
@@ -82,6 +83,7 @@ receiveBlockLight forkMaxDiff targetHash appState = MsgHandler $ \block -> do
             BlockInserted lively' newfixed -> do
                 writeMemory appState lively' -- stm
                 appendFixed appState newfixed  -- db, also different interface to only add new blocks. 
+                modifyMemory appState (+ FixedLength (fromIntegral $ length newfixed))
                 return $ do
                     logger appState "handler: Received block was inserted into chain."
                     -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
@@ -109,12 +111,12 @@ lightNodeHandler :: (InMemory.HasLogging appState,
     InMemory.InMemory appState m PeersSet,
     InMemory appState m (Future BlockHeader),
     InMemory appState m (Lively BlockHeader),
-    AppendFixed appState m BlockHeader, 
+    AppendFixed appState m BlockHeader,
     InMemory appState m FixedLength,
     HasDB appState)
     => ForkMaxDiff -> TargetHash -> appState -> MessageHandler
-lightNodeHandler forkMaxDiff targetHash = 
-    combineHandlers 
+lightNodeHandler forkMaxDiff targetHash =
+    combineHandlers
         (const answerPing)
         (receiveBlockLight forkMaxDiff targetHash)
         (const ignoreTransaction)

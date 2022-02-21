@@ -25,8 +25,8 @@ data ConnectionSettings = ConnectionSettings {
     database :: ByteString
 } deriving (Generic)
 
-instance ToJSON ConnectionSettings
-instance FromJSON ConnectionSettings
+-- instance ToJSON ConnectionSettings
+-- instance FromJSON ConnectionSettings
 
 
 
@@ -36,13 +36,20 @@ data PoolSettings = PoolSettings {
     connectionSettings :: ConnectionSettings
 }
 
-withPool :: PoolSettings -> ((Session a -> IO (Either Pool.UsageError a)) -> IO b) -> IO b
-withPool PoolSettings{connectionSettings=ConnectionSettings{..}, ..} f = 
-    bracket 
-        (Pool.acquire (poolSize, timeout, settings host port user password database))
-        Pool.release
-        (f . Pool.use)
 
+-- withPool :: PoolSettings -> ((Session a -> IO (Either Pool.UsageError a)) -> IO b) -> IO b
+-- withPool PoolSettings{connectionSettings=ConnectionSettings{..}, ..} f = 
+--     bracket 
+--         (Pool.acquire (poolSize, timeout, settings host port user password database))
+--         Pool.release
+--         (f . Pool.use)
+
+acquire :: PoolSettings -> IO Pool 
+acquire PoolSettings{connectionSettings=ConnectionSettings{..}, ..} = 
+    Pool.acquire (poolSize, timeout, settings host port user password database)
+
+
+-- withPool :: HasDB appState => PoolSettings -> (() -> appState -> IO b) -> IO b
 
 onErrorLogAndQuit :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO a) 
 onErrorLogAndQuit log f = f >=> \case 
@@ -54,5 +61,4 @@ onErrorLogAndQuit log f = f >=> \case
 
 
 class HasDB appState where 
-    execute :: appState -> Session a -> IO a
-    
+    executeDB :: appState -> Session a -> IO a

@@ -1,5 +1,4 @@
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -35,6 +34,7 @@ import MessageType (Message(BlockMessage), ReceivedBlock (ReceivedBlock), Answer
 import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
 import Server (Address(Address), server)
 import InMemory (logger, HasLogging, InMemory (readMemory, writeMemory, modifyMemory, modifyMemoryIO), runAtomically, InMemoryRead (readMemoryIO))
+import System.Exit (exitFailure)
 
 data Config = Config {
         blockchainFilepath :: FilePath,
@@ -238,8 +238,8 @@ fullNodeCatchUpToBlockchain :: (InMemory.HasLogging appState,
     ForkMaxDiff -> TargetHash -> appState -> IO ()
 fullNodeCatchUpToBlockchain forkMaxDiff targetHash appState = do
     blocks <- catchUpToBlockchain forkMaxDiff targetHash (fmap whatsNextBlock . readMemoryIO) appState
-    modifyMemoryIO appState (\bs -> foldl' (addBlock forkMaxDiff targetHash) bs blocks)    
-     
+    modifyMemoryIO appState (\bs -> foldl' (addBlock forkMaxDiff targetHash) bs blocks)
+
 -- Validate the block, based on outcome do:
 -- - add it to blockchain and broadcast further if it's a new block
 -- - add to blockchain but don't broadcast
@@ -378,7 +378,7 @@ runFullNode config =
         withLoadSave (blockchainFilepath config) $ \efixed ->
 
             case liftM2 (,) epeers efixed of
-                Left err -> log err
+                Left err -> log err >> exitFailure
                 Right (peers, fixed) -> main log peers fixed
 
     where
@@ -398,11 +398,6 @@ runFullNode config =
             -- query for blocks after our last block
             forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
 
-            -- forkIO . forever $ do
-            --     threadDelay 8000000
-            --     fixed <- atomically $ readFixedBlocks blockchainState
-            --     print fixed
-
             -- forkIO runServer
             -- forkIO mine
             concurrently_ (mine log appSt) (runServer log appState)
@@ -413,7 +408,7 @@ runFullNode config =
         initBlockchainState :: Genesis -> TVar FixedBlocks -> IO BlockchainState
         initBlockchainState genesis fixed = atomically $ do
             fixed1 <- readTVar fixed
-            BlockchainState genesis fixed 
+            BlockchainState genesis fixed
                 <$> newTVar (Lively {
                         root=case fixed1 of
                             Fixed [] -> shash256 (Left genesis)

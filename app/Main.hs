@@ -40,4 +40,5 @@ main = do
             print "Unable to read config file. Quits."
         Right config -> do
             runFullNode config
+
 --             -- encodeFile "app/fixed_blocks.json" (FixedBlocks [])

@@ -34,3 +34,4 @@
   - Check BlockValidation once more.
   - Consider merging InMemory _ (Lively/Fixed/Future) into already existing InMemory _ BlockchainData
   - Check bytestring encoding, consider encoding as text.
+  - Make FixedLength a part of Lively.
