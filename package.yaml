@@ -39,13 +39,13 @@ library:
 executables:
 
   wallet:
+    main: wallet.hs
     source-dirs: app
-    main: Wallet.hs
     dependencies:
       - Cryptocurrency
 
   miner:
-    main: Main.hs
+    main: miner.hs
     source-dirs: app
     dependencies:
       - Cryptocurrency
