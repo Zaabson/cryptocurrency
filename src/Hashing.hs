@@ -5,10 +5,12 @@ module Hashing where
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UTF8
-import Data.Aeson ( encode, FromJSON(parseJSON), ToJSON(toJSON) )
-import GHC.Generics
+import Data.Aeson (FromJSON(parseJSON), ToJSON(toJSON) )
+import qualified Data.Aeson as Aeson
+import GHC.Generics ( Generic )
 import Crypto.Util (bs2i, i2bs_unsized)
-import Control.DeepSeq
+import Control.DeepSeq ( NFData )
+-- import qualified Data.Aeson.Key as Aeson
 
 -- TODO: target hash based on average mining speed 
 -- targetHash :: RawHash
@@ -47,7 +49,7 @@ instance FromJSON (HashOf a) where
 -- serializes to ByteString using JSON serialization, calculates sha256 hash
 -- Hashable == ToJSON
 shash256 :: ToJSON a => a -> HashOf a
-shash256 = Hash . SHA256.hashlazy . encode
+shash256 = Hash . SHA256.hashlazy . Aeson.encode
 
 -- type to be used instead of HashOf when the information about what was hashed can be lost.
 newtype RawHash = RawHash {rawHash :: B.ByteString} deriving (Eq, Ord, Generic)

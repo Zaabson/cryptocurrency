@@ -3,17 +3,17 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
 import Network.Socket (ServiceName)
 import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet)
-import Wallet.DBPool (onErrorLogAndQuit, PoolSettings, HasDB (executeDB), acquire)
 import GHC.Generics (Generic)
-import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, encodeFile)
+import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value)
 import Server (Address(Address), server)
 import MessageHandlers (toServerHandler)
-import Wallet.Node (lightNodeHandler, lightNodeCatchUpToBlockchain, FixedLength (FixedLength))
+import Wallet.Node (lightNodeHandler, lightNodeCatchUpToBlockchain, FixedLength (FixedLength), HasDB (executeDB))
 import BlockType (Genesis, BlockHeader (BlockHeader))
 import Control.Concurrent.AdvSTM.TVar
 import qualified Hasql.Pool as Pool
@@ -31,33 +31,14 @@ import qualified Hasql.Transaction.Sessions as Hasql
 import Hasql.Transaction.Sessions (Mode(Write), IsolationLevel (Serializable))
 import System.Exit (exitFailure)
 import Control.Monad ((>=>))
-
-data BlockchainConfig = BlockchainConfig {
-    targetDifficulty :: Int,
-    forkMaxDiff :: ForkMaxDiff,
-    blockchainGenesis     :: Genesis
-} deriving (Generic)
-
--- instance ToJSON BlockchainConfig
--- instance FromJSON BlockchainConfig
-
-data NodeConfig = NodeConfig {
-    port :: ServiceName,
-    loggingMode :: LoggingMode,
-    peersFilepath :: FilePath
-} deriving (Generic)
-
--- instance ToJSON NodeConfig
--- instance FromJSON NodeConfig
-
-data WalletConfig = WalletConfig {
-    databaseConfig :: PoolSettings,
-    blockchainConfig :: BlockchainConfig,
-    nodeConfig :: NodeConfig
-} deriving (Generic)
-
--- instance ToJSON WalletConfig
--- instance FromJSON WalletConfig
+import qualified Data.ByteString as B
+import Data.Text (Text)
+import qualified Data.ByteString.Base64 as B64
+import Data.Aeson.Types (Parser)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
+import Hasql.Session (Session)
+import Hasql.Connection (settings)
 
 data BlockchainState = BlockchainState {
     getGenesis :: Genesis,
@@ -122,6 +103,17 @@ withLoadSave fp = bracket
         either (return . Left) (fmap Right . newTVarIO) eload)
     (either (const $ return ()) (atomically . readTVar >=> encodeFile fp))
 
+acquire :: PoolSettings -> IO Pool
+acquire PoolSettings{connectionSettings=ConnectionSettings{..}, ..} =
+    Pool.acquire (poolSize, timeout, settings (encodeUtf8 dbhost) dbport (encodeUtf8 dbuser) (encodeUtf8 dbpassword) (encodeUtf8 database))
+
+
+onErrorLogAndQuit :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO a)
+onErrorLogAndQuit log f = f >=> \case
+   Left  e -> log (show e) >> exitFailure
+   Right a -> return a
+
+-- Question: Can I recover from errors?
 
 runWallet :: WalletConfig  -> IO ()
 runWallet config =

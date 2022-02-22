@@ -21,9 +21,10 @@ import Hasql.Session (Session)
 import Hasql.Transaction.Sessions (transaction, IsolationLevel (Serializable), Mode (Write))
 import BlockCreation (blockRef)
 import Control.Concurrent.Async (forConcurrently_)
-import Wallet.DBPool (HasDB (executeDB))
 import Data.Int (Int64)
 
+class HasDB appState where
+    executeDB :: appState -> Session a -> IO a
 
 -- Blockheight is kept in coinbase, absent in blockheader.
 -- TODO: Fix resulting ineffectivenes.

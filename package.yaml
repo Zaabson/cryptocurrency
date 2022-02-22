@@ -32,6 +32,7 @@ dependencies:
   - contravariant-extras
   - universe-base
   - stm-io-hooks
+  - base64-bytestring
 
 library:
   source-dirs: src
