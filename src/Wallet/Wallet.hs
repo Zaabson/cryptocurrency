@@ -121,7 +121,7 @@ runWallet config =
         withLoadSave (peersFilepath $ nodeConfig config) $ \case
             Left e -> log e >> exitFailure
             Right peers ->
-                bracket (acquire $ databaseConfig config) Pool.release $ \pool ->
+                bracket (acquire $ poolSettings config) Pool.release $ \pool ->
                     main log pool peers
 
     where

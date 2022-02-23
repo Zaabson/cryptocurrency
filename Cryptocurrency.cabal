@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 20c84471f2f748a69cd04584ccfba522d1f5bb7c20a6c09bc6fa7157cb185c7e
+-- hash: c221ab976f9fa6bfb39b5326389862077ba49a684c158d9bd2fc5e4d6144a3c9
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -26,6 +26,7 @@ library
       MessageType
       Node
       Server
+      Wallet.Configs
       Wallet.DBTransaction
       Wallet.Node
       Wallet.Session
