@@ -33,6 +33,7 @@ dependencies:
   - universe-base
   - stm-io-hooks
   - base64-bytestring
+  - yaml
 
 library:
   source-dirs: src
