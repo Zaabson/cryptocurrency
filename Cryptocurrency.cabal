@@ -1,0 +1,205 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.34.4.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 20c84471f2f748a69cd04584ccfba522d1f5bb7c20a6c09bc6fa7157cb185c7e
+
+name:           Cryptocurrency
+version:        0.0.0
+build-type:     Simple
+
+library
+  exposed-modules:
+      BlockChain
+      BlockCreation
+      BlockType
+      BlockValidation
+      Client
+      ErorsT
+      FullNode
+      Hashing
+      InMemory
+      Merkle
+      MessageHandlers
+      MessageType
+      Node
+      Server
+      Wallet.DBTransaction
+      Wallet.Node
+      Wallet.Session
+      Wallet.Statement
+      Wallet.Type
+      Wallet.Wallet
+  other-modules:
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      src
+  build-depends:
+      DRBG
+    , RSA
+    , aeson
+    , async
+    , base
+    , base64-bytestring
+    , binary
+    , bytestring
+    , bytestring-conversion
+    , containers
+    , contravariant-extras
+    , crypto-api
+    , cryptohash-sha256
+    , deepseq
+    , hasql
+    , hasql-pool
+    , hasql-transaction
+    , mtl
+    , network
+    , optparse-applicative
+    , sampling
+    , stm
+    , stm-chans
+    , stm-io-hooks
+    , text
+    , time
+    , universe-base
+    , unordered-containers
+    , utf8-string
+    , vector
+    , yaml
+  default-language: Haskell2010
+
+executable miner
+  main-is: miner.hs
+  other-modules:
+      Demo
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      app
+  build-depends:
+      Cryptocurrency
+    , DRBG
+    , RSA
+    , aeson
+    , async
+    , base
+    , base64-bytestring
+    , binary
+    , bytestring
+    , bytestring-conversion
+    , containers
+    , contravariant-extras
+    , crypto-api
+    , cryptohash-sha256
+    , deepseq
+    , hasql
+    , hasql-pool
+    , hasql-transaction
+    , mtl
+    , network
+    , optparse-applicative
+    , sampling
+    , stm
+    , stm-chans
+    , stm-io-hooks
+    , text
+    , time
+    , universe-base
+    , unordered-containers
+    , utf8-string
+    , vector
+    , yaml
+  default-language: Haskell2010
+
+executable wallet
+  main-is: wallet.hs
+  other-modules:
+      Demo
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      app
+  build-depends:
+      Cryptocurrency
+    , DRBG
+    , RSA
+    , aeson
+    , async
+    , base
+    , base64-bytestring
+    , binary
+    , bytestring
+    , bytestring-conversion
+    , containers
+    , contravariant-extras
+    , crypto-api
+    , cryptohash-sha256
+    , deepseq
+    , hasql
+    , hasql-pool
+    , hasql-transaction
+    , mtl
+    , network
+    , optparse-applicative
+    , sampling
+    , stm
+    , stm-chans
+    , stm-io-hooks
+    , text
+    , time
+    , universe-base
+    , unordered-containers
+    , utf8-string
+    , vector
+    , yaml
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      ArbitraryBlock
+      BlockChainTest
+      BlocksValidationTest
+      Paths_Cryptocurrency
+  hs-source-dirs:
+      test
+  build-depends:
+      Cryptocurrency
+    , DRBG
+    , QuickCheck
+    , RSA
+    , aeson
+    , async
+    , base
+    , base64-bytestring
+    , binary
+    , bytestring
+    , bytestring-conversion
+    , combinat
+    , containers
+    , contravariant-extras
+    , crypto-api
+    , cryptohash-sha256
+    , deepseq
+    , hasql
+    , hasql-pool
+    , hasql-transaction
+    , mtl
+    , network
+    , optparse-applicative
+    , parallel
+    , pretty-simple
+    , quickcheck-instances
+    , sampling
+    , stm
+    , stm-chans
+    , stm-io-hooks
+    , text
+    , time
+    , universe-base
+    , unordered-containers
+    , utf8-string
+    , vector
+    , yaml
+  default-language: Haskell2010
