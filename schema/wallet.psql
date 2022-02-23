@@ -1,4 +1,6 @@
 
+-- create DATABASE wallet_db
+
 CREATE TYPE transactionStatus AS ENUM ('validated', 'waiting', 'discarded');
 
 -- transaction is NOT a reserved keyword in postgreSQL, it is in standard SQL
@@ -7,7 +9,6 @@ create table transaction (
     txBlockId bytea not null,
     txData jsonb not null,
     txStatus transactionStatus not null
-    -- check ( txStatus != 'validated' or (txblockid is not null) )
 );
 
 create table fixedHeader (
