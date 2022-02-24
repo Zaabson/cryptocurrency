@@ -4,17 +4,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs #-}
 module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
 import Network.Socket (ServiceName)
-import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet)
+import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value)
 import Server (Address(Address), server)
 import MessageHandlers (toServerHandler)
 import Wallet.Node (lightNodeHandler, lightNodeCatchUpToBlockchain, FixedLength (FixedLength), HasDB (executeDB))
-import BlockType (Genesis, BlockHeader (BlockHeader))
+import BlockType (Genesis, BlockHeader (BlockHeader), Transaction, TXID, Cent, PublicAddress)
 import Control.Concurrent.AdvSTM.TVar
 import qualified Hasql.Pool as Pool
 import Hasql.Pool (Pool)
@@ -39,6 +40,7 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
 import Hasql.Session (Session)
 import Hasql.Connection (settings)
+import BlockCreation (OwnedUTXO)
 
 data BlockchainState = BlockchainState {
     getGenesis :: Genesis,
@@ -115,13 +117,38 @@ onErrorLogAndQuit log f = f >=> \case
 
 -- Question: Can I recover from errors?
 
+data Command response where 
+    AddCoin         :: OwnedUTXO ->             Command AddCoinResponse
+    AddTransaction  :: Transaction ->           Command AddTransactionResponse
+    SendTransaction :: PublicAddress -> Cent -> Command SendTransactionResponse
+    GetStatus       :: TXID ->                  Command StatusResponse
+
+data AddCoinResponse
+    = AddCoinSuccess
+    | AddCoinFail
+
+data AddTransactionResponse
+    = AddTransactionSuccess
+    | AddTransactionFail
+
+data SendTransactionResponse
+    = SendedTransaction
+    | NotEnoughFunds
+    | SendTransactionFailure
+
+data StatusResponse
+    = StatusIs TXID Status
+    | GetStatusFailure
+
+
+
 runWallet :: WalletConfig  -> IO ()
 runWallet config =
     withLogging (loggingMode $ nodeConfig config) $ \log ->
         withLoadSave (peersFilepath $ nodeConfig config) $ \case
             Left e -> log e >> exitFailure
             Right peers ->
-                bracket (acquire $ poolSettings config) Pool.release $ \pool ->
+                bracket (acquire $ databaseConfig config) Pool.release $ \pool ->
                     main log pool peers
 
     where
@@ -131,7 +158,7 @@ runWallet config =
         runServer log appState = server serverAddr log (toServerHandler (lightNodeHandler forkMaxDiff1 targetHash appState) log)
 
         main log pool peers = do
-            -- log "app: Loaded peers and fixed blocks."
+            log "wallet: Started."
 
             -- Read FixedLength
             fixedLength <- onErrorLogAndQuit log (Pool.use pool) selectFixedCount

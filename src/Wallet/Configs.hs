@@ -39,7 +39,7 @@ data BlockchainConfig = BlockchainConfig {
 } deriving (Generic)
 
 data WalletConfig = WalletConfig {
-    poolSettings :: PoolSettings,
+    databaseConfig :: PoolSettings,
     blockchainConfig :: BlockchainConfig,
     nodeConfig :: NodeConfig
 } deriving (Generic)

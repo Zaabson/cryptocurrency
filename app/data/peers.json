@@ -1,1 +1,29 @@
-[[{"hostName":"localhost","serviceName":"49153"},{"tag":"DidntReact","contents":"2022-01-05T18:23:27.75068071Z"}],[{"hostName":"localhost","serviceName":"49154"},{"tag":"DidntReact","contents":"2022-01-05T18:23:27.750675007Z"}],[{"hostName":"localhost","serviceName":"49155"},{"tag":"Active"}]]
+[
+    [
+        {
+            "serviceName": "49001",
+            "hostName": "localhost"
+        },
+        {
+            "tag": "Active"
+        }
+    ],
+    [
+        {
+            "serviceName": "49002",
+            "hostName": "localhost"
+        },
+        {
+            "tag": "Active"
+        }
+    ],
+    [
+        {
+            "serviceName": "49003",
+            "hostName": "localhost"
+        },
+        {
+            "tag": "Active"
+        }
+    ]
+]

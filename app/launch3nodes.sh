@@ -1,10 +1,9 @@
 #!/usr/bin/bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "$DIR" || exit
+cd "$DIR/.." || exit
 
-stack run -- --config data/config1.json &
-stack run -- --config data/config2.json &
-stack run -- --config data/config3.json
-# stack runhaskell Demo.hs
-# stack runhaskell Main.hs -- --config data/config3.json
+stack run -- miner --config app/configs/miner_config1.yaml &
+stack run -- miner --config app/configs/miner_config2.yaml &
+
+stack run -- wallet --config app/configs/wallet_config.yaml
