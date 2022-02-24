@@ -1,4 +1,4 @@
-#!/usr/bin/bash/
+#!/usr/bin/bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
@@ -13,7 +13,7 @@ SERVER_PID=$!
 # give server some time before we try to connect 
 sleep 0.1
 
-SUCCESS=`stack runhaskell $CLIENT $PORT`
+SUCCESS=$(stack runhaskell $CLIENT $PORT)
 
 echo Server answered ping: $SUCCESS
 

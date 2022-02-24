@@ -55,18 +55,33 @@ appendLenBits bs = B.append (int64ToByteString (B.length bs)) bs
 msgToBytes :: String -> B.ByteString
 msgToBytes = appendLenBits . UTF8.fromString
 
+-- Keeps reading untill reads n bytes or returns Nothing if stream ends.
+-- Doesn't handle errors. 
+keepReading :: Socket -> Int64 -> IO (Maybe B.ByteString)
+keepReading sock n = loop n B.empty
+    where
+        loop 0 bs = return $ Just bs
+        loop n bs = do 
+            bytes <- NSB.recv sock n
+            if B.null bytes then 
+                return Nothing
+            else do
+                let n' = n -  B.length bytes
+                loop n' (B.append bs bytes)
+
+-- Reads first 8 bytes to get message size, then reads the message.
+-- Returns Nothing if message ends short or first 8 bytes invalid.
 readMessage :: Socket -> IO (Maybe B.ByteString)
 readMessage sock = do 
-    lenBytes <- NSB.recv sock 8
-    if B.length lenBytes == 8 then do
-        let len = byteStringToInt64 lenBytes
-        msg <- NSB.recv sock len
-        if B.length msg == len then
-            return $ Just msg
-        else
-            return Nothing
-    else
-        return Nothing
+    mlenBytes <- keepReading sock 8
+    case mlenBytes of 
+      Nothing -> return Nothing
+      Just lenBytes ->
+          let len = byteStringToInt64 lenBytes in
+            if len <= 0 then
+                return Nothing
+            else
+                keepReading sock len
 
 -- type HostName = String
 -- Either a host name e.g., "haskell.org" or a numeric host address string consisting of a dotted decimal IPv4 address or an IPv6 address e.g., "192.168.0.1".

@@ -9,7 +9,6 @@ import Data.Time.Clock (secondsToNominalDiffTime)
 import Data.Yaml (encodeFile, decodeFileEither, prettyPrintParseException)
 import BlockChain (ForkMaxDiff(ForkMaxDiff))
 import BlockType (Genesis(Genesis))
-import Data.Yaml.Pretty (encodePretty, defConfig)
 import qualified Data.ByteString as B
 import Options.Applicative
 import Control.Exception (onException)

@@ -34,6 +34,8 @@ import System.Exit (exitFailure)
 import Control.Monad ((>=>))
 import qualified Data.ByteString as B
 import Data.Text (Text)
+import Data.Text.Lazy (unpack)
+import Text.Pretty.Simple (pShow)
 import qualified Data.ByteString.Base64 as B64
 import Data.Aeson.Types (Parser)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -112,7 +114,7 @@ acquire PoolSettings{connectionSettings=ConnectionSettings{..}, ..} =
 
 onErrorLogAndQuit :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO a)
 onErrorLogAndQuit log f = f >=> \case
-   Left  e -> log (show e) >> exitFailure
+   Left  e -> log ( unpack $ pShow e) >> exitFailure    -- lets go through intermediate text as we might want to swap log type to Text -> IO ()
    Right a -> return a
 
 -- Question: Can I recover from errors?

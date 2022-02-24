@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c221ab976f9fa6bfb39b5326389862077ba49a684c158d9bd2fc5e4d6144a3c9
+-- hash: b6e469f08182de9539f8d962512c258b360b209258b47d745f6c57157d31efc7
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -58,6 +58,7 @@ library
     , mtl
     , network
     , optparse-applicative
+    , pretty-simple
     , sampling
     , stm
     , stm-chans
@@ -100,6 +101,7 @@ executable miner
     , mtl
     , network
     , optparse-applicative
+    , pretty-simple
     , sampling
     , stm
     , stm-chans
@@ -142,6 +144,7 @@ executable wallet
     , mtl
     , network
     , optparse-applicative
+    , pretty-simple
     , sampling
     , stm
     , stm-chans

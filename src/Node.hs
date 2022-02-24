@@ -28,7 +28,7 @@ import Crypto.Random (CryptoRandomGen(newGenIO))
 import Control.Concurrent (MVar, newMVar, forkIO, withMVar, threadDelay, takeMVar)
 import Control.Monad.Except (runExceptT, ExceptT (ExceptT), withExceptT)
 import GHC.IO.IOMode (IOMode(AppendMode))
-import System.IO (withFile, hPutStrLn, hFlush, stdin, stdout, openFile, hClose, Handle, hPutStr, stderr)
+import System.IO (withFile, hPutStrLn, hFlush, stdin, stdout, openFile, hClose, Handle, hPutStr, stderr, BufferMode (LineBuffering), hSetBuffering)
 import Control.Concurrent.STM (newTQueue, writeTQueue)
 import Control.Concurrent.STM.TMQueue
 import Control.Exception (bracket, finally)
@@ -301,7 +301,7 @@ makeLogger mode = makeLogger1 mode <$> newMVar ()
 withLoggingHdl :: ((String -> IO ()) -> IO a) -> Handle -> IO a
 withLoggingHdl action hdl = do
     queue <- newTMQueueIO
-    withAsync (logging hdl queue) (\as ->
+    withAsync (hSetBuffering hdl LineBuffering >> logging hdl queue) (\as ->
         action (logHandle queue) `finally` quit hdl queue as
         )
 
