@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 module BlockCreation where
 
 import Merkle
@@ -15,10 +17,40 @@ import Crypto.Random (CryptoRandomGen)
 import BlockType (blockBlockHeight, TXID, Output(..), Transaction(..), Input,
                   BlockReference, BlockHeader(..), Coinbase(..), Block(..), Cent(..), Genesis, PublicAddress)
 import BlockValidation (calculateBlockReward, createSignedInput, UTXO(..), txGetNewUTXOs)
+import GHC.Generics (Generic)
+import Data.Aeson ( FromJSON (parseJSON), ToJSON (toJSON), object, (.=), withObject, (.:), withText )
+import qualified Data.Binary as Bin
+import qualified Data.ByteString.Base64 as B64
+import Data.Text (pack)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 data Keys = Keys RSA.PublicKey RSA.PrivateKey
+    deriving (Generic)
+
+newtype ByteStringJSON = ByteStringJSON {getByteStringBack :: B.ByteString }
+
+instance ToJSON ByteStringJSON where
+    toJSON = toJSON . decodeUtf8 . B64.encode . getByteStringBack 
+
+instance FromJSON ByteStringJSON where
+    parseJSON = withText "ByteString" $
+        either fail (return . ByteStringJSON) . B64.decode . encodeUtf8
+
+
+instance ToJSON Keys where
+    toJSON (Keys pub priv) = object
+        ["public_key" .= ByteStringJSON (LazyB.toStrict $ Bin.encode pub), "private_key" .= ByteStringJSON (LazyB.toStrict $ Bin.encode priv) ]
+
+instance FromJSON Keys where
+    parseJSON = withObject "Keys" $ \o -> 
+        Keys <$> ( Bin.decode . LazyB.fromStrict . getByteStringBack <$> o .: "public_key")
+             <*> ( Bin.decode . LazyB.fromStrict . getByteStringBack <$> o .: "private_key")
 
 data OwnedUTXO = OwnedUTXO UTXO Keys
+    deriving (Generic)
+
+instance ToJSON OwnedUTXO
+instance FromJSON OwnedUTXO 
 
 instance Show OwnedUTXO where
     show (OwnedUTXO utxo _) = "Owned: " ++ show utxo

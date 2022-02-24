@@ -13,7 +13,7 @@ import MessageType
 import Control.Concurrent.Async (forConcurrently_, forConcurrently, Async, async, wait, withAsync)
 import Control.Monad (when, void, forever, (>=>))
 import Data.Function (on)
-import Client (send, sendToAll, sendAndReceive)
+import Client (sendAndReceive)
 import BlockChain (ForkMaxDiff)
 import Hashing (TargetHash, difficultyToTargetHash)
 import InMemory (InMemory (modifyMemoryIO, modifyMemory), HasLogging (logger), InMemoryRead (readMemoryIO), runAtomically)
@@ -41,11 +41,11 @@ class AppendFixed appState m b where
     appendFixed :: appState -> [b] -> m () 
 
 
-sendMsg :: Message -> Address -> IO ()
-sendMsg msg = send (encode msg)
+-- sendMsg :: Message -> Address -> IO ()
+-- sendMsg msg = send (encode msg)
 
-sendMsgToAll :: Message -> [Address] -> IO ()
-sendMsgToAll msg = sendToAll (encode msg)
+-- sendMsgToAll :: Message -> [Address] -> IO ()
+-- sendMsgToAll msg = sendToAll (encode msg)
 
 sendAndReceiveMsg ::  Message -> (Maybe Answer -> IO a) -> Address -> IO a
 sendAndReceiveMsg msg k address = sendAndReceive (encode msg) address (k . (>>=  decode))

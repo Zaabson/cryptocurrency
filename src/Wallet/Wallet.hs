@@ -1,21 +1,19 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GADTs #-}
 module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
-import Network.Socket (ServiceName)
+import Network.Socket (ServiceName, Socket)
 import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status)
 import GHC.Generics (Generic)
-import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value)
+import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value, decode)
 import Server (Address(Address), server)
 import MessageHandlers (toServerHandler)
 import Wallet.Node (lightNodeHandler, lightNodeCatchUpToBlockchain, FixedLength (FixedLength), HasDB (executeDB))
-import BlockType (Genesis, BlockHeader (BlockHeader), Transaction, TXID, Cent, PublicAddress)
+import BlockType (Genesis, BlockHeader (BlockHeader))
 import Control.Concurrent.AdvSTM.TVar
 import qualified Hasql.Pool as Pool
 import Hasql.Pool (Pool)
@@ -42,7 +40,6 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
 import Hasql.Session (Session)
 import Hasql.Connection (settings)
-import BlockCreation (OwnedUTXO)
 
 data BlockchainState = BlockchainState {
     getGenesis :: Genesis,
@@ -118,30 +115,6 @@ onErrorLogAndQuit log f = f >=> \case
    Right a -> return a
 
 -- Question: Can I recover from errors?
-
-data Command response where 
-    AddCoin         :: OwnedUTXO ->             Command AddCoinResponse
-    AddTransaction  :: Transaction ->           Command AddTransactionResponse
-    SendTransaction :: PublicAddress -> Cent -> Command SendTransactionResponse
-    GetStatus       :: TXID ->                  Command StatusResponse
-
-data AddCoinResponse
-    = AddCoinSuccess
-    | AddCoinFail
-
-data AddTransactionResponse
-    = AddTransactionSuccess
-    | AddTransactionFail
-
-data SendTransactionResponse
-    = SendedTransaction
-    | NotEnoughFunds
-    | SendTransactionFailure
-
-data StatusResponse
-    = StatusIs TXID Status
-    | GetStatusFailure
-
 
 
 runWallet :: WalletConfig  -> IO ()

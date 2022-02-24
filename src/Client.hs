@@ -32,14 +32,14 @@ makeConnection address = withSocketsDo $
 withSocket :: Address -> (Socket -> IO a) -> IO a
 withSocket address = bracket (makeConnection address) (`gracefulClose` timeOutToRecvTCP_FIN)
 
-send :: B.ByteString -> Address -> IO ()
-send msg address = withSocket address (`NSB.sendAll` msg)
+-- send :: B.ByteString -> Address -> IO ()
+-- send msg address = withSocket address (`NSB.sendAll` msg)
 
-sendToAll :: B.ByteString -> [Address] -> IO ()
-sendToAll msg addresses = do
-    forConcurrently_ addresses $ send msg
+-- sendToAll :: B.ByteString -> [Address] -> IO ()
+-- sendToAll msg addresses = do
+--     forConcurrently_ addresses $ send msg
 
--- Send bytes, await a response (0.3s) and do something with the response if we get it
+-- Send bytes, await a response (1s) and do something with the response if we get it
 sendAndReceive :: B.ByteString -> Address -> (Maybe B.ByteString -> IO a) -> IO a
 sendAndReceive msg address k = do
     response <- ((\e -> return (Right ())) :: IOException -> IO (Either a ())) `handle` awaitResponse
@@ -55,10 +55,12 @@ sendAndReceive msg address k = do
             answer <- async (readMessage sock)
                 
             -- wait the delay 
-            waiting <- async $ void $ threadDelay 300000
+            waiting <- async $ void $ threadDelay 1000000
 
             answer `waitEitherCancel` waiting
-        
+
+send :: Socket -> B.ByteString -> IO ()
+send sock msg = NSB.sendAll sock (appendLenBits msg)
 
 type Microseconds = Int
 

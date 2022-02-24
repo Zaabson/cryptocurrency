@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards, LambdaCase #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module BlockValidation where
 
@@ -13,13 +14,18 @@ import qualified Codec.Crypto.RSA as RSA
 import BlockType
 import Hashing (HashOf(..), shash256, toRawHash, TargetHash(..), RawHash (RawHash), shashBytes)
 import Data.Bifunctor (first)
+import GHC.Generics (Generic)
+import Data.Aeson (ToJSON, FromJSON)
 -- import BlockChain (LivelyBlocks(..), linkToChain)
 
 x |> f = f x
 infixl 1 |>
 
 data UTXO = UTXO TXID Integer Output -- TODO use this type below (or don't)
-    deriving (Show)
+    deriving (Show, Generic)
+
+instance ToJSON UTXO
+instance FromJSON UTXO 
 
 instance Eq UTXO where
     (UTXO txid1 vout1 _) == (UTXO txid2 vout2 _) = (txid1 == txid2) && (vout1 == vout2)
