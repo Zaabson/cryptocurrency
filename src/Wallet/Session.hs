@@ -1,7 +1,7 @@
 module Wallet.Session where
 
 import qualified Hasql.Transaction as DBTransaction
-import BlockType (BlockReference, TXID, BlockHeader)
+import BlockType (BlockReference, TXID, BlockHeader, coinbaseOutputs, outputs)
 import Wallet.Type (Status (Validated), StoredTransaction (StoredTransaction))
 import qualified Hasql.Transaction as Transaction
 -- import qualified Wallet.Statement (selectTxIdByBlock)
@@ -12,6 +12,8 @@ import qualified Hasql.Session as Session
 import Data.Int (Int64, Int32)
 import qualified Codec.Crypto.RSA as RSA
 import qualified Data.Aeson as Aeson
+import BlockCreation (OwnedUTXO(OwnedUTXO), Keys (Keys))
+import BlockValidation (UTXO(UTXO))
 
 -- TODO: if Session unused, rename to session
 
@@ -34,7 +36,7 @@ selectFixedCount = Session.statement () Statement.selectFixedCount
 insertTransaction :: StoredTransaction -> Session.Session ()
 insertTransaction (StoredTransaction txid blockref etx status) = 
     Session.statement 
-        (txid, blockref, either Aeson.toJSON Aeson.toJSON etx, status, either (const False) (const True) etx)
+        (txid, blockref, either Aeson.toJSON Aeson.toJSON etx, status, either (const True) (const False) etx)
         Statement.insertTransaction   
 
 insertOwnedKeys :: TXID -> Int32 -> RSA.PublicKey -> RSA.PrivateKey ->  Session.Session ()
@@ -42,3 +44,21 @@ insertOwnedKeys txid vout pub priv = Session.statement (txid, vout, pub, priv) S
 
 selectStatus :: TXID -> Session.Session Status
 selectStatus txid = Session.statement txid Statement.selectStatus 
+
+-- selectOwnedByStatus :: (Status -> Session.Session
+--                        (V.Vector
+--                           (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Aeson.Value, Bool)))
+selectOwnedByStatus :: Status -> Session.Session (V.Vector OwnedUTXO)
+selectOwnedByStatus status = V.map makeOwnedUTXO <$> Session.statement status Statement.selectOwnedByStatus 
+    where 
+        makeOwnedUTXO (txid, vout, pub, priv, json, isCoinbase) =
+            -- ! Here we use partial functions assuming correct db data that is:
+            --   - vout is reference to existing index in outputs list
+            --   - json is correct value for coinbase/transaction consistent with isCoinbase
+            let Aeson.Success output =
+                    if isCoinbase then
+                        (!! fromEnum vout) . coinbaseOutputs <$> Aeson.fromJSON json
+                    else 
+                        (!! fromEnum vout) . outputs         <$> Aeson.fromJSON json
+                        
+                in OwnedUTXO (UTXO txid (toInteger vout) output) (Keys pub priv)

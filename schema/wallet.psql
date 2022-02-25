@@ -23,4 +23,5 @@ create table ownedKeys (
     vout integer not null,
     pubKey bytea not null,
     privKey bytea not null
+    primary key (keysTxId, vout)
 )

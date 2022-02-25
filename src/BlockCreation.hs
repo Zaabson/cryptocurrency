@@ -92,12 +92,12 @@ takeTillWithAccum f s (x:xs) =
 
 type SimpleWallet = [OwnedUTXO]
 
-
 createSendingTransaction :: SimpleWallet                 -- collection of OwnedUTXOs to be used as inputs
                          -> Keys                         -- sender's keys to be used for change
                          -> PublicAddress                -- recipient's public address
                          -> Cent                         -- amount to be sent  
-                         -> Maybe (SimpleWallet, Transaction)   -- (unused UTXOs + change 2UTXO, created transaction)
+                        --  -> Maybe (SimpleWallet, Transaction)   -- (unused UTXOs + change 2UTXO, created transaction)
+                         -> Maybe (OwnedUTXO, [OwnedUTXO], Transaction)   -- (new utxo from change, used up utxos, created transaction)
 createSendingTransaction ownedUTXOs keys@(Keys pub priv) recipient amount =
     case takeTillWithAccum (\s utxo -> 
             let s' = howMuchCash utxo + s in 
@@ -108,7 +108,27 @@ createSendingTransaction ownedUTXOs keys@(Keys pub priv) recipient amount =
             let tx = Transaction [] [Output {outputDenomination=amount, ownerPublicAddress=recipient}, 
                                      change] in 
             let tx = tx {inputs=map (createSignedInputFromUTXO tx) (u:notEnough)}
-            in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys : us, tx)
+            -- in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys : us, tx)
+            in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys, u:notEnough, tx)
+
+
+
+-- createSendingTransaction :: SimpleWallet                 -- collection of OwnedUTXOs to be used as inputs
+--                          -> Keys                         -- sender's keys to be used for change
+--                          -> PublicAddress                -- recipient's public address
+--                          -> Cent                         -- amount to be sent  
+--                          -> Maybe (SimpleWallet, Transaction)   -- (unused UTXOs + change 2UTXO, created transaction)
+-- createSendingTransaction ownedUTXOs keys@(Keys pub priv) recipient amount =
+--     case takeTillWithAccum (\s utxo -> 
+--             let s' = howMuchCash utxo + s in 
+--                 (s', s' < amount)) 0 ownedUTXOs of 
+--         (s, notEnough, []) -> Nothing
+--         (s, notEnough, u:us) -> 
+--             let change = Output {outputDenomination=s+howMuchCash u - amount, ownerPublicAddress=shash256 pub} in 
+--             let tx = Transaction [] [Output {outputDenomination=amount, ownerPublicAddress=recipient}, 
+--                                      change] in 
+--             let tx = tx {inputs=map (createSignedInputFromUTXO tx) (u:notEnough)}
+--             in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys : us, tx)
 
 
 -- keysLength :: Int

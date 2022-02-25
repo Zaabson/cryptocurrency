@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
@@ -24,7 +25,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.Async (concurrently_)
 import InMemory (HasLogging (logger), InMemory (readMemory, writeMemory, modifyMemory))
 import Control.Concurrent.AdvSTM (AdvSTM, onCommit, atomically)
-import Wallet.Session (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction)
+import Wallet.Session (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction, insertOwnedKeys, selectOwnedByStatus)
 import Data.Foldable (for_)
 import Hasql.Transaction (statement)
 import qualified Hasql.Transaction.Sessions as Hasql
@@ -40,8 +41,10 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
 import Hasql.Session (Session)
 import Hasql.Connection (settings)
-import Wallet.Repl (serveRepl, CommandR(..), AddCoinResponse (AddCoinFail))
-import Wallet.Type (StoredTransaction(StoredTransaction))
+import Wallet.Repl (serveRepl, CommandR(..), AddCoinResponse (AddCoinFail, AddCoinSuccess), AddTransactionResponse (AddTransactionSuccess, AddTransactionFail), SendTransactionResponse (SendTransactionFailure, NotEnoughFunds))
+import Wallet.Type (StoredTransaction(StoredTransaction), Status (Waiting, Validated))
+import BlockCreation (Keys(Keys), OwnedUTXO (OwnedUTXO), createSendingTransaction)
+import BlockValidation (UTXO(UTXO))
 
 data BlockchainState = BlockchainState {
     getGenesis :: Genesis,
@@ -119,13 +122,43 @@ onErrorLogAndQuit log f = f >=> \case
 
 -- Question: Can I recover from errors?
 
--- Execute user's wallet command. User 
--- replHandler :: (Session a -> IO (Either Pool.UsageError a)) -> CommandR r-> IO r
-replHandler :: appState -> CommandR r-> IO r
-replHandler appState (AddCoin ou) = return AddCoinFail
-replHandler appState (AddTransaction tx) = _ $ insertTransaction (StoredTransaction (shash256 $ Right tx) _ _ _)
-replHandler appState (SendTransaction ho ce) = _
-replHandler appState (GetStatus txid) = _ $ selectStatus txid
+
+
+-- Execute user's wallet command provided with a handle to db pool that logs the error and projects to Nothing.
+replHandler :: (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r
+-- replHandler :: appState -> CommandR r-> IO r
+replHandler usePool (AddCoin (OwnedUTXO (UTXO txid vout _) (Keys pub priv))) = do 
+    -- we discard Output information from OwnedUTXO 
+    m <- usePool $ insertOwnedKeys txid (fromInteger vout) pub priv
+    case m of 
+        Nothing -> return AddCoinFail
+        Just () -> return AddCoinSuccess 
+
+replHandler usePool (AddTransaction tx blockref) = do 
+    m <- usePool $ insertTransaction (StoredTransaction (shash256 tx) blockref tx Waiting)
+    case m of 
+        Nothing -> return AddTransactionSuccess 
+        Just () -> return AddTransactionFail
+
+-- replHandler usePool (SendTransaction recipient n) = do
+--     mutxos <- usePool $ selectOwnedByStatus Validated
+--     case mutxos of 
+--         Nothing -> return SendTransactionFailure
+--         Just utxos ->
+--             let (newutxo, usedUTXOs, newtx) = createSendingTransaction utxos newkeys recipient n
+--                 in insertOwnedKeys txid (fromInteger vout) pub priv
+
+replHandler usePool (SendTransaction recipient n) = _ . usePool $ do
+    utxos <- selectOwnedByStatus Validated
+    case createSendingTransaction utxos newkeys recipient n of
+        Nothing -> return NotEnoughFunds 
+        Just (newutxo, _, newtx) -> 
+            -- Here only remove
+            insertOwnedKeys txid (fromInteger vout) pub priv
+    _
+
+
+replHandler usePool (GetStatus txid) = _ $ selectStatus txid
 
 runWallet :: WalletConfig  -> IO ()
 runWallet config =

@@ -18,7 +18,7 @@ data UpdateStatus
 data StoredTransaction = StoredTransaction {
     txid :: TXID,
     txBlockId :: BlockReference,
-    txData :: Either Transaction Coinbase,
+    txData :: Either Coinbase Transaction,
     txStatus :: Status
 }
 

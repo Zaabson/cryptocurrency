@@ -22,7 +22,7 @@ import Wallet.Type (StoredTransaction (StoredTransaction), Status (Validated, Wa
 import qualified Codec.Crypto.RSA as RSA
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
-import Data.ByteString.Lazy (toStrict)
+import Data.ByteString.Lazy (toStrict, fromStrict)
 import qualified Data.Aeson as Aeson
 
 
@@ -133,6 +133,9 @@ insertTransaction = Statement sql e D.noResult True
 encodeBinary :: Binary a => E.Params a
 encodeBinary = contramap (toStrict . Binary.encode) . E.param . E.nonNullable $ E.bytea
 
+rowBinary :: Binary a => D.Row a
+rowBinary = Binary.decode . fromStrict <$> (D.column . D.nonNullable $ D.bytea)
+
 insertOwnedKeys :: Statement (TXID , Int32, RSA.PublicKey, RSA.PrivateKey) ()
 insertOwnedKeys = Statement sql e D.noResult True
     where
@@ -147,3 +150,23 @@ selectStatus = Statement sql encodeHash (D.singleRow rowStatus) True
 -- selectTxsForAmount :: Statement Int64 (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Cent, PublicAddress))
 -- Effective implementation for such query would need changing the data model by adding outputs, inputs tables and destructing transaction into components
 -- Let's go with bruteforce solution in a hope that wallet only stores medium amounts of transactions and not that often sends transactions. 
+
+-- selectOwnedByStatus :: Statement Status (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, StoredTransaction))
+-- sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txStatus=$1 "
+-- sql = "select (txId, txData, txStatus, txIsCoinbase) from transaction where txStatus=$1 "
+-- sql = "(select (txId) from transaction where txStatus=$1) intersect (select (keysTxId) from ownedKeys)"
+-- sql = "(select distinct (txId) from transaction where txStatus=$1 and txId in (select (keysTxId) from ownedKeys)) "
+-- sql - "select (txId, vout, pubkey, privkey, txData) from transaction, ownedKeys where keysTxId = txId "
+
+selectOwnedByStatus :: Statement Status (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Aeson.Value, Bool))
+selectOwnedByStatus = Statement sql encodeStatus (D.rowVector d) True
+    where
+        sql = "select (txId, vout, pubKey, privKey, txData) from transaction, ownedKeys where keysTxId = txId"
+        nonNullableColumn = D.column . D.nonNullable
+        d = (,,,,,) 
+            <$> rowHash
+            <*> nonNullableColumn D.int4
+            <*> rowBinary
+            <*> rowBinary
+            <*> nonNullableColumn jsonb2aeson
+            <*> nonNullableColumn D.bool

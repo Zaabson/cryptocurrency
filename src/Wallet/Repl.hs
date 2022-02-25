@@ -5,7 +5,7 @@
 module Wallet.Repl where
 
 import BlockCreation (OwnedUTXO)
-import BlockType (Transaction, TXID, Cent, PublicAddress)
+import BlockType (Transaction, TXID, Cent, PublicAddress, Coinbase, BlockReference)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON, eitherDecode, encode)
 import Server (readAllMessages, Address, acceptSingleClient)
@@ -18,7 +18,7 @@ import Client (send)
 -- Non-GADT type to transform to and from JSON data. 
 data CommandJSON
     = AddCoinJSON  OwnedUTXO
-    | AddTransactionJSON  Transaction
+    | AddTransactionJSON  (Either Coinbase Transaction) BlockReference
     | SendTransactionJSON  PublicAddress Cent
     | GetStatusJSON  TXID
     deriving (Generic)
@@ -28,10 +28,10 @@ instance FromJSON CommandJSON
 
 -- Type for a command to wallet repl. 
 data CommandR response where
-    AddCoin         :: OwnedUTXO ->             CommandR AddCoinResponse
-    AddTransaction  :: Transaction ->           CommandR AddTransactionResponse
+    AddCoin         :: OwnedUTXO -> CommandR AddCoinResponse
+    AddTransaction  :: Either Coinbase Transaction -> BlockReference -> CommandR AddTransactionResponse
     SendTransaction :: PublicAddress -> Cent -> CommandR SendTransactionResponse
-    GetStatus       :: TXID ->                  CommandR StatusResponse
+    GetStatus       :: TXID -> CommandR StatusResponse
 
 -- Existentially qualified CommandR type.
 data Command = forall r . ToJSON r => Command (CommandR r)
@@ -41,7 +41,7 @@ parseCommand = second commandFromJSON . eitherDecode
     where
         commandFromJSON :: CommandJSON -> Command
         commandFromJSON (AddCoinJSON utxo) = Command $ AddCoin utxo
-        commandFromJSON (AddTransactionJSON tx) = Command $ AddTransaction tx
+        commandFromJSON (AddTransactionJSON tx blockref) = Command $ AddTransaction tx blockref
         commandFromJSON (SendTransactionJSON pubaddr n) = Command $ SendTransaction pubaddr n
         commandFromJSON (GetStatusJSON txid) = Command $ GetStatus txid
 
