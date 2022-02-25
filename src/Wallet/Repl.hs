@@ -18,7 +18,7 @@ import Client (send)
 -- Non-GADT type to transform to and from JSON data. 
 data CommandJSON
     = AddCoinJSON  OwnedUTXO
-    | AddTransactionJSON  (Either Coinbase Transaction) BlockReference
+    | AddTransactionJSON  (Either Coinbase Transaction) (Maybe BlockReference)
     | SendTransactionJSON  PublicAddress Cent
     | GetStatusJSON  TXID
     deriving (Generic)
@@ -29,7 +29,7 @@ instance FromJSON CommandJSON
 -- Type for a command to wallet repl. 
 data CommandR response where
     AddCoin         :: OwnedUTXO -> CommandR AddCoinResponse
-    AddTransaction  :: Either Coinbase Transaction -> BlockReference -> CommandR AddTransactionResponse
+    AddTransaction  :: Either Coinbase Transaction -> Maybe BlockReference -> CommandR AddTransactionResponse
     SendTransaction :: PublicAddress -> Cent -> CommandR SendTransactionResponse
     GetStatus       :: TXID -> CommandR StatusResponse
 

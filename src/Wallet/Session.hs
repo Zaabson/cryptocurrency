@@ -40,7 +40,7 @@ insertTransaction (StoredTransaction txid blockref etx status) =
         Statement.insertTransaction   
 
 insertOwnedKeys :: TXID -> Int32 -> RSA.PublicKey -> RSA.PrivateKey ->  Session.Session ()
-insertOwnedKeys txid vout pub priv = Session.statement (txid, vout, pub, priv) Statement.insertOwnedKeys 
+insertOwnedKeys txid vout pub priv = Session.statement (txid, vout, pub, priv) Statement.insertOwnedKeys
 
 selectStatus :: TXID -> Session.Session Status
 selectStatus txid = Session.statement txid Statement.selectStatus 

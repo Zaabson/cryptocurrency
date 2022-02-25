@@ -9,7 +9,7 @@ module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
 import Network.Socket (ServiceName, Socket)
-import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status)
+import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value, decode)
 import Server (Address(Address), server)
@@ -26,7 +26,7 @@ import Control.Concurrent.Async (concurrently_)
 import InMemory (HasLogging (logger), InMemory (readMemory, writeMemory, modifyMemory))
 import Control.Concurrent.AdvSTM (AdvSTM, onCommit, atomically)
 import Wallet.Session (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction, insertOwnedKeys, selectOwnedByStatus)
-import Data.Foldable (for_)
+import Data.Foldable (for_, Foldable (toList))
 import Hasql.Transaction (statement)
 import qualified Hasql.Transaction.Sessions as Hasql
 import Hasql.Transaction.Sessions (Mode(Write), IsolationLevel (Serializable))
@@ -140,22 +140,27 @@ replHandler usePool (AddTransaction tx blockref) = do
         Nothing -> return AddTransactionSuccess 
         Just () -> return AddTransactionFail
 
--- replHandler usePool (SendTransaction recipient n) = do
---     mutxos <- usePool $ selectOwnedByStatus Validated
---     case mutxos of 
---         Nothing -> return SendTransactionFailure
---         Just utxos ->
---             let (newutxo, usedUTXOs, newtx) = createSendingTransaction utxos newkeys recipient n
---                 in insertOwnedKeys txid (fromInteger vout) pub priv
+replHandler usePool (SendTransaction recipient n) = do 
+    newkeys <- generateKeys
+    res <- usePool (db newkeys)
+    case res of 
+      -- db session error
+      Nothing -> return SendTransactionFailure 
+      Just Nothing -> return NotEnoughFunds 
+      Just (Just newtx) -> _ newtx   -- broadcast transaction
 
-replHandler usePool (SendTransaction recipient n) = _ . usePool $ do
-    utxos <- selectOwnedByStatus Validated
-    case createSendingTransaction utxos newkeys recipient n of
-        Nothing -> return NotEnoughFunds 
-        Just (newutxo, _, newtx) -> 
-            -- Here only remove
-            insertOwnedKeys txid (fromInteger vout) pub priv
-    _
+    where 
+        db newkeys = do
+            utxos <- selectOwnedByStatus Validated
+            case createSendingTransaction (toList utxos) newkeys recipient n of
+                Nothing -> return Nothing
+                -- Keys here are the same newkeys
+                -- used up transactions seem irrelevant here? should remove them only when tx added to fixed
+                Just (OwnedUTXO (UTXO txid vout out) (Keys pub priv), _, newtx) -> do
+                    -- Here only remove
+                    insertOwnedKeys txid (fromInteger vout) pub priv
+                    insertTransaction $ StoredTransaction txid Nothing (Right newtx) Waiting
+                    return $ Just newtx
 
 
 replHandler usePool (GetStatus txid) = _ $ selectStatus txid

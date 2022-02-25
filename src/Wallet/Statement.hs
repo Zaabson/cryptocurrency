@@ -38,14 +38,24 @@ rowHash = coerceHash <$> D.column (D.nonNullable D.bytea)
         coerceHash :: ByteString -> HashOf a
         coerceHash = coerce
 
+rowHashNull :: D.Row (Maybe (HashOf a))
+rowHashNull = fmap coerceHash <$> D.column (D.nullable D.bytea)
+    where
+        coerceHash ::  ByteString -> HashOf a
+        coerceHash = coerce
+
+
 -- encodeHash :: E.Params BlockReference
 encodeHash :: Coercible b ByteString =>  E.Params b
 encodeHash = contramap coerce . E.param . E.nonNullable $ E.bytea
 
-txDecoder :: D.Row (TXID, BlockReference, Aeson.Value, Status, Bool)
+encodeHashNull :: Coercible b ByteString =>  E.Params (Maybe b)
+encodeHashNull = contramap coerce . E.param . E.nullable $ E.bytea
+
+txDecoder :: D.Row (TXID, Maybe BlockReference, Aeson.Value, Status, Bool)
 txDecoder = (,,,,)
     <$> rowHash
-    <*> rowHash
+    <*> rowHashNull
     <*> D.column (D.nonNullable jsonb2aeson)
     <*> rowStatus
     <*> D.column (D.nonNullable D.bool)
@@ -67,26 +77,26 @@ encodeStatus = E.param . E.nonNullable $ E.enum status2str
         status2str Discarded = "discarded"
 
 
-selectTxByStatus :: Statement Status (Vector (TXID, BlockReference, Aeson.Value, Status, Bool))
+selectTxByStatus :: Statement Status (Vector (TXID, Maybe BlockReference, Aeson.Value, Status, Bool))
 selectTxByStatus = Statement sql encodeStatus (D.rowVector txDecoder) True
     where
         sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txStatus = $1"
 
 
-selectTxByBlock :: Statement BlockReference (Vector (TXID, BlockReference, Aeson.Value, Status, Bool))
-selectTxByBlock = Statement sql encodeHash (D.rowVector txDecoder) True
-    where
-        sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txBlockId = $1"
+-- selectTxByBlock :: Statement BlockReference (Vector (TXID, Maybe BlockReference, Aeson.Value, Status, Bool))
+-- selectTxByBlock = Statement sql encodeHash (D.rowVector txDecoder) True
+--     where
+--         sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txBlockId is not null and txBlockId = $1"
 
 selectTxIdByBlock :: Statement BlockReference (Vector TXID)
 selectTxIdByBlock = Statement sql encodeHash (D.rowVector rowHash) True
     where
-        sql = "select txId from transaction where txBlockId = $1"
+        sql = "select txId from transaction where (txBlockId is not null) and (txBlockId = $1)"
 
-updateTxStatus :: Statement (Status, TXID) ()
-updateTxStatus = Statement sql (contrazip2 encodeStatus encodeHash) D.noResult True
-    where
-        sql = "update transaction set txStatus = $2 where txBlockId = $1"
+-- updateTxStatus :: Statement (Status, TXID) ()
+-- updateTxStatus = Statement sql (contrazip2 encodeStatus encodeHash) D.noResult True
+--     where
+--         sql = "update transaction set txStatus = $1 where txId = $2"
 
 
 -- Update txs statuses for transactions from block
@@ -119,13 +129,13 @@ selectFixedCount = Statement sql E.noParams (D.singleRow . D.column . D.nonNulla
         sql = "select count(*) from fixedHeader"
 
 
-insertTransaction :: Statement (TXID, BlockReference, Aeson.Value, Status, Bool) ()
+insertTransaction :: Statement (TXID, Maybe BlockReference, Aeson.Value, Status, Bool) ()
 insertTransaction = Statement sql e D.noResult True
     where
         sql = "insert into transaction (txId, txBlockId, txData, txStatus, Bool) values ($1, $2, $3, $4, $5)"
         e = contrazip5
             encodeHash
-            encodeHash
+            encodeHashNull
             (E.param . E.nonNullable $ aeson2jsonb)
             encodeStatus
             (E.param . E.nonNullable $ E.bool)

@@ -14,7 +14,7 @@ import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, ro
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
-import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed))
+import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys)
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
@@ -96,16 +96,6 @@ writeFutureBlocks (BlockchainState _ _ _ future _) = writeTVar future
 
 writeUTXOPool :: BlockchainState -> UTXOPool -> STM ()
 writeUTXOPool (BlockchainState _ _ _ _ utxoPool) = writeTVar utxoPool
-
--- Constant
-keyLength :: Int
-keyLength = 2048
-
-generateKeys :: IO Keys
-generateKeys = do
-    g <- newGenIO :: IO DRBG.HmacDRBG
-    let (pub, priv, _) = RSA.generateKeyPair g keyLength
-    return $ Keys pub priv
 
 blocksEqual :: Block -> Block -> Bool
 blocksEqual b1 b2 = shash256 (blockHeader b1) == shash256 (blockHeader b2)

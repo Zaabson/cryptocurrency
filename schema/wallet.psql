@@ -7,10 +7,12 @@ create type transactionStatus as enum ('validated', 'waiting', 'discarded');
 -- Same table stores both coinbase and normal transactions. txIsCoinbase differentiates.
 create table transaction (
     txId bytea primary key,
-    txBlockId bytea not null,
+    -- txBlockId null if tx wasn't yet included in block
+    txBlockId bytea null,
     txData jsonb not null,
     txStatus transactionStatus not null,
-    txIsCoinbase boolean not null 
+    txIsCoinbase boolean not null
+    check (txBlockId is not null or txStatus != 'validated')
 );
 
 create table fixedHeader (

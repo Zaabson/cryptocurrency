@@ -37,6 +37,17 @@ import Data.Universe.Helpers (interleave)
 -- Collects functionality common between fullnode and wallet lightnode.
 -- 
 
+-- Constant
+keyLength :: Int
+keyLength = 2048
+
+generateKeys :: IO Keys
+generateKeys = do
+    g <- newGenIO :: IO DRBG.HmacDRBG
+    let (pub, priv, _) = RSA.generateKeyPair g keyLength
+    return $ Keys pub priv
+
+
 class AppendFixed appState m b where
     appendFixed :: appState -> [b] -> m () 
 
