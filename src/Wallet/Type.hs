@@ -1,5 +1,5 @@
 module Wallet.Type where
-import BlockType (BlockReference, TXID, Transaction (Transaction), BlockHeader (BlockHeader))
+import BlockType (BlockReference, TXID, Transaction (Transaction), BlockHeader (BlockHeader), Coinbase)
 
 -- Decision: Let's store transactions rather than utxos. We lose less information and its trivial to get utxos from tx.
 
@@ -18,7 +18,7 @@ data UpdateStatus
 data StoredTransaction = StoredTransaction {
     txid :: TXID,
     txBlockId :: BlockReference,
-    txData :: Transaction,
+    txData :: Either Transaction Coinbase,
     txStatus :: Status
 }
 

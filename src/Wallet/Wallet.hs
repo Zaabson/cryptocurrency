@@ -24,7 +24,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.Async (concurrently_)
 import InMemory (HasLogging (logger), InMemory (readMemory, writeMemory, modifyMemory))
 import Control.Concurrent.AdvSTM (AdvSTM, onCommit, atomically)
-import Wallet.DBTransaction (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction)
+import Wallet.Session (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction)
 import Data.Foldable (for_)
 import Hasql.Transaction (statement)
 import qualified Hasql.Transaction.Sessions as Hasql

@@ -16,7 +16,7 @@ import Hashing (TargetHash, shash256)
 import qualified Data.Set as Set
 import BlockValidation (validateNonceAndMerkle)
 import Wallet.Type (Status(Validated))
-import Wallet.DBTransaction (updateTxStatusMany, updateStatusByBlock, addFixedBlockHeader)
+import Wallet.Session (updateTxStatusMany, updateStatusByBlock, addFixedBlockHeader)
 import Hasql.Session (Session)
 import Hasql.Transaction.Sessions (transaction, IsolationLevel (Serializable), Mode (Write))
 import BlockCreation (blockRef)

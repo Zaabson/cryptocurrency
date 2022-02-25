@@ -16,13 +16,14 @@ import Data.Coerce (coerce, Coercible)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.ByteString (ByteString)
 import Data.Int (Int64, Int32)
-import Contravariant.Extras (contrazip2, contrazip4)
+import Contravariant.Extras (contrazip2, contrazip4, contrazip5)
 import Data.Foldable (foldl')
 import Wallet.Type (StoredTransaction (StoredTransaction), Status (Validated, Waiting, Discarded))
 import qualified Codec.Crypto.RSA as RSA
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
 import Data.ByteString.Lazy (toStrict)
+import qualified Data.Aeson as Aeson
 
 
 jsonb2aeson :: FromJSON a => D.Value a
@@ -41,12 +42,13 @@ rowHash = coerceHash <$> D.column (D.nonNullable D.bytea)
 encodeHash :: Coercible b ByteString =>  E.Params b
 encodeHash = contramap coerce . E.param . E.nonNullable $ E.bytea
 
-txDecoder :: D.Row StoredTransaction
-txDecoder = StoredTransaction
+txDecoder :: D.Row (TXID, BlockReference, Aeson.Value, Status, Bool)
+txDecoder = (,,,,)
     <$> rowHash
     <*> rowHash
     <*> D.column (D.nonNullable jsonb2aeson)
     <*> rowStatus
+    <*> D.column (D.nonNullable D.bool)
 
 rowStatus :: D.Row Status
 rowStatus = D.column (D.nonNullable (D.enum str2status))
@@ -65,16 +67,16 @@ encodeStatus = E.param . E.nonNullable $ E.enum status2str
         status2str Discarded = "discarded"
 
 
-selectTxByStatus :: Statement Status (Vector StoredTransaction)
+selectTxByStatus :: Statement Status (Vector (TXID, BlockReference, Aeson.Value, Status, Bool))
 selectTxByStatus = Statement sql encodeStatus (D.rowVector txDecoder) True
     where
-        sql = "select (txId, txBlockId, txData, txStatus) from transaction where txStatus = $1"
+        sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txStatus = $1"
 
 
-selectTxByBlock :: Statement BlockReference (Vector StoredTransaction)
+selectTxByBlock :: Statement BlockReference (Vector (TXID, BlockReference, Aeson.Value, Status, Bool))
 selectTxByBlock = Statement sql encodeHash (D.rowVector txDecoder) True
     where
-        sql = "select (txId, txBlockId, txData, txStatus) from transaction where txBlockId = $1"
+        sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txBlockId = $1"
 
 selectTxIdByBlock :: Statement BlockReference (Vector TXID)
 selectTxIdByBlock = Statement sql encodeHash (D.rowVector rowHash) True
@@ -117,11 +119,16 @@ selectFixedCount = Statement sql E.noParams (D.singleRow . D.column . D.nonNulla
         sql = "select count(*) from fixedHeader"
 
 
-insertTransaction :: Statement (TXID, BlockReference, Transaction, Status) ()
+insertTransaction :: Statement (TXID, BlockReference, Aeson.Value, Status, Bool) ()
 insertTransaction = Statement sql e D.noResult True
     where
-        sql = "insert into transaction (txId, txBlockId, txData, txStatus) values ($1, $2, $3, $4)"
-        e = contrazip4 encodeHash encodeHash (E.param . E.nonNullable $ aeson2jsonb) encodeStatus
+        sql = "insert into transaction (txId, txBlockId, txData, txStatus, Bool) values ($1, $2, $3, $4, $5)"
+        e = contrazip5
+            encodeHash
+            encodeHash
+            (E.param . E.nonNullable $ aeson2jsonb)
+            encodeStatus
+            (E.param . E.nonNullable $ E.bool)
 
 encodeBinary :: Binary a => E.Params a
 encodeBinary = contramap (toStrict . Binary.encode) . E.param . E.nonNullable $ E.bytea

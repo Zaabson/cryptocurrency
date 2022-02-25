@@ -4,11 +4,13 @@
 create type transactionStatus as enum ('validated', 'waiting', 'discarded');
 
 -- transaction is not a reserved keyword in postgreSQL, it is in standard SQL
+-- Same table stores both coinbase and normal transactions. txIsCoinbase differentiates.
 create table transaction (
     txId bytea primary key,
     txBlockId bytea not null,
     txData jsonb not null,
-    txStatus transactionStatus not null
+    txStatus transactionStatus not null,
+    txIsCoinbase boolean not null 
 );
 
 create table fixedHeader (
