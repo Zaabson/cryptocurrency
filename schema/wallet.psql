@@ -17,7 +17,7 @@ create table fixedHeader (
 );
 
 create table ownedKeys (
-    txId bytea not null references transaction,
+    keysTxId bytea not null references transaction,
     vout integer not null,
     pubKey bytea not null,
     privKey bytea not null

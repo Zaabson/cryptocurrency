@@ -15,10 +15,14 @@ import Data.Functor.Contravariant (contramap)
 import Data.Coerce (coerce, Coercible)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.ByteString (ByteString)
-import Data.Int (Int64)
-import Contravariant.Extras (contrazip2)
+import Data.Int (Int64, Int32)
+import Contravariant.Extras (contrazip2, contrazip4)
 import Data.Foldable (foldl')
 import Wallet.Type (StoredTransaction (StoredTransaction), Status (Validated, Waiting, Discarded))
+import qualified Codec.Crypto.RSA as RSA
+import Data.Binary (Binary)
+import qualified Data.Binary as Binary
+import Data.ByteString.Lazy (toStrict)
 
 
 jsonb2aeson :: FromJSON a => D.Value a
@@ -42,22 +46,25 @@ txDecoder = StoredTransaction
     <$> rowHash
     <*> rowHash
     <*> D.column (D.nonNullable jsonb2aeson)
-    <*> D.column (D.nonNullable (D.enum str2status))
+    <*> rowStatus
 
-    where 
+rowStatus :: D.Row Status
+rowStatus = D.column (D.nonNullable (D.enum str2status))
+
+    where
         str2status "validated" = Just Validated
         str2status "waiting" = Just Waiting
         str2status "discarded" = Just Discarded
         str2status _ = Nothing
 
-encodeStatus :: E.Params Status 
+encodeStatus :: E.Params Status
 encodeStatus = E.param . E.nonNullable $ E.enum status2str
     where
         status2str Validated = "validated"
         status2str Waiting   = "waiting"
         status2str Discarded = "discarded"
 
-        
+
 selectTxByStatus :: Statement Status (Vector StoredTransaction)
 selectTxByStatus = Statement sql encodeStatus (D.rowVector txDecoder) True
     where
@@ -66,17 +73,17 @@ selectTxByStatus = Statement sql encodeStatus (D.rowVector txDecoder) True
 
 selectTxByBlock :: Statement BlockReference (Vector StoredTransaction)
 selectTxByBlock = Statement sql encodeHash (D.rowVector txDecoder) True
-    where 
+    where
         sql = "select (txId, txBlockId, txData, txStatus) from transaction where txBlockId = $1"
 
 selectTxIdByBlock :: Statement BlockReference (Vector TXID)
 selectTxIdByBlock = Statement sql encodeHash (D.rowVector rowHash) True
-    where 
+    where
         sql = "select txId from transaction where txBlockId = $1"
 
-updateTxStatus :: Statement (Status, TXID) ()   
+updateTxStatus :: Statement (Status, TXID) ()
 updateTxStatus = Statement sql (contrazip2 encodeStatus encodeHash) D.noResult True
-    where 
+    where
         sql = "update transaction set txStatus = $2 where txBlockId = $1"
 
 
@@ -100,11 +107,36 @@ updateTxStatusMany = Statement sql (contrazip2 encodeStatus (vector $ contramap 
 
 addFixedBlockHeader :: Statement (BlockReference , BlockHeader) ()
 addFixedBlockHeader = Statement sql e D.noResult True
-    where 
+    where
         sql = "insert into fixedHeader values ($1, $2)"
         e = contrazip2 encodeHash (E.param . E.nonNullable $ aeson2jsonb)
 
 selectFixedCount :: Statement () Int64
-selectFixedCount = Statement sql E.noParams (D.singleRow . D.column . D.nonNullable $ D.int8) True 
+selectFixedCount = Statement sql E.noParams (D.singleRow . D.column . D.nonNullable $ D.int8) True
     where
         sql = "select count(*) from fixedHeader"
+
+
+insertTransaction :: Statement (TXID, BlockReference, Transaction, Status) ()
+insertTransaction = Statement sql e D.noResult True
+    where
+        sql = "insert into transaction (txId, txBlockId, txData, txStatus) values ($1, $2, $3, $4)"
+        e = contrazip4 encodeHash encodeHash (E.param . E.nonNullable $ aeson2jsonb) encodeStatus
+
+encodeBinary :: Binary a => E.Params a
+encodeBinary = contramap (toStrict . Binary.encode) . E.param . E.nonNullable $ E.bytea
+
+insertOwnedKeys :: Statement (TXID , Int32, RSA.PublicKey, RSA.PrivateKey) ()
+insertOwnedKeys = Statement sql e D.noResult True
+    where
+        sql = "insert into ownedKeys (keysTxId, vout, pubKey, privKey) values ($1, $2, $3, $4)"
+        e = contrazip4 encodeHash (E.param $ E.nonNullable E.int4) encodeBinary encodeBinary
+
+selectStatus :: Statement TXID Status
+selectStatus = Statement sql encodeHash (D.singleRow rowStatus) True
+    where
+        sql = "select txStatus from transaction where txId = $1"
+
+-- selectTxsForAmount :: Statement Int64 (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Cent, PublicAddress))
+-- Effective implementation for such query would need changing the data model by adding outputs, inputs tables and destructing transaction into components
+-- Let's go with bruteforce solution in a hope that wallet only stores medium amounts of transactions and not that often sends transactions. 

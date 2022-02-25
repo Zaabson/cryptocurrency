@@ -2,14 +2,15 @@ module Wallet.DBTransaction where
 
 import qualified Hasql.Transaction as DBTransaction
 import BlockType (BlockReference, TXID, BlockHeader)
-import Wallet.Type (Status (Validated))
+import Wallet.Type (Status (Validated), StoredTransaction (StoredTransaction))
 import qualified Hasql.Transaction as Transaction
 -- import qualified Wallet.Statement (selectTxIdByBlock)
 import qualified Data.Vector as V
 import qualified Wallet.Statement as Statement
 import Hashing (shash256)
 import qualified Hasql.Session as Session
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
+import qualified Codec.Crypto.RSA as RSA
 
 -- TODO: if Session unused, rename to session
 
@@ -28,3 +29,13 @@ addFixedBlockHeader blockHeader = Transaction.statement (shash256 $ Right blockH
 
 selectFixedCount :: Session.Session Int64
 selectFixedCount = Session.statement () Statement.selectFixedCount
+
+insertTransaction :: StoredTransaction -> Session.Session ()
+insertTransaction (StoredTransaction txid blockref tx status) = 
+    Session.statement (txid, blockref, tx, status) Statement.insertTransaction   
+
+insertOwnedKeys :: TXID -> Int32 -> RSA.PublicKey -> RSA.PrivateKey ->  Session.Session ()
+insertOwnedKeys txid vout pub priv = Session.statement (txid, vout, pub, priv) Statement.insertOwnedKeys 
+
+selectStatus :: TXID -> Session.Session Status
+selectStatus txid = Session.statement txid Statement.selectStatus 

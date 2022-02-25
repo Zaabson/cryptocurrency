@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs #-}
 module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
@@ -23,7 +24,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.Async (concurrently_)
 import InMemory (HasLogging (logger), InMemory (readMemory, writeMemory, modifyMemory))
 import Control.Concurrent.AdvSTM (AdvSTM, onCommit, atomically)
-import Wallet.DBTransaction (addFixedBlockHeader, selectFixedCount)
+import Wallet.DBTransaction (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction)
 import Data.Foldable (for_)
 import Hasql.Transaction (statement)
 import qualified Hasql.Transaction.Sessions as Hasql
@@ -34,12 +35,13 @@ import qualified Data.ByteString as B
 import Data.Text (Text)
 import Data.Text.Lazy (unpack)
 import Text.Pretty.Simple (pShow)
-import qualified Data.ByteString.Base64 as B64
 import Data.Aeson.Types (Parser)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
 import Hasql.Session (Session)
 import Hasql.Connection (settings)
+import Wallet.Repl (serveRepl, CommandR(..), AddCoinResponse (AddCoinFail))
+import Wallet.Type (StoredTransaction(StoredTransaction))
 
 data BlockchainState = BlockchainState {
     getGenesis :: Genesis,
@@ -90,6 +92,7 @@ instance AppendFixed AppState AdvSTM BlockHeader where
 
 instance HasDB AppState where 
     executeDB appState = onErrorLogAndQuit (getLogger appState) $ Pool.use (getDBPool appState)  
+-- Turned out in one place I do want to recover from error, in repl where we execute user provided commands.
 
 instance HasLogging AppState where
     logger = getLogger 
@@ -116,6 +119,13 @@ onErrorLogAndQuit log f = f >=> \case
 
 -- Question: Can I recover from errors?
 
+-- Execute user's wallet command. User 
+-- replHandler :: (Session a -> IO (Either Pool.UsageError a)) -> CommandR r-> IO r
+replHandler :: appState -> CommandR r-> IO r
+replHandler appState (AddCoin ou) = return AddCoinFail
+replHandler appState (AddTransaction tx) = _ $ insertTransaction (StoredTransaction (shash256 $ Right tx) _ _ _)
+replHandler appState (SendTransaction ho ce) = _
+replHandler appState (GetStatus txid) = _ $ selectStatus txid
 
 runWallet :: WalletConfig  -> IO ()
 runWallet config =
@@ -130,6 +140,7 @@ runWallet config =
         targetHash = difficultyToTargetHash . targetDifficulty . blockchainConfig $ config
         forkMaxDiff1 = forkMaxDiff $ blockchainConfig config
         serverAddr = Address "localhost" (port $ nodeConfig config)
+        replAddr   = Address "localhost" (replPort config)
         runServer log appState = server serverAddr log (toServerHandler (lightNodeHandler forkMaxDiff1 targetHash appState) log)
 
         main log pool peers = do
@@ -146,7 +157,7 @@ runWallet config =
 
             -- forkIO runServer
             -- forkIO mine
-            -- concurrently_ _ (runServer log appState)
+            concurrently_ (serveRepl replAddr log _) (runServer log appState)
             runServer log appState
 
         initBlockchainState genesis fixedLength =
@@ -154,4 +165,3 @@ runWallet config =
                 <$> newTVarIO (Lively (shash256 $ Left genesis) [])
                 <*> newTVarIO (Future Map.empty)
                 <*> newTVarIO (FixedLength fixedLength)
-                 

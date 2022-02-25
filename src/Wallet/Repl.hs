@@ -8,7 +8,7 @@ import BlockCreation (OwnedUTXO)
 import BlockType (Transaction, TXID, Cent, PublicAddress)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON, eitherDecode, encode)
-import Server (readAllMessages)
+import Server (readAllMessages, Address, acceptSingleClient)
 import Node (Status)
 import qualified Data.ByteString.Lazy as Lazy
 import Data.Bifunctor (second)
@@ -78,10 +78,6 @@ data StatusResponse
 instance ToJSON StatusResponse 
 instance FromJSON StatusResponse 
 
-foo :: CommandR r -> IO r
-foo (AddCoin utxo) = return AddCoinSuccess
-
--- f _ = undefined
 
 readAllCommands :: Socket -> IO [Either String Command]
 readAllCommands sock = map parseCommand <$> readAllMessages sock
@@ -98,4 +94,8 @@ processMessages sock log f = do
             resp <- f c
             send sock $ encode resp
             tillLeft es
-            
+
+
+serveRepl :: Address -> (String -> IO ()) -> (forall r . CommandR r-> IO r) -> IO ()
+serveRepl addr log handler = acceptSingleClient addr log $ \sock ->
+    processMessages sock log handler

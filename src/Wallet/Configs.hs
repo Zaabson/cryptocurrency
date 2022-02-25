@@ -41,7 +41,8 @@ data BlockchainConfig = BlockchainConfig {
 data WalletConfig = WalletConfig {
     databaseConfig :: PoolSettings,
     blockchainConfig :: BlockchainConfig,
-    nodeConfig :: NodeConfig
+    nodeConfig :: NodeConfig,
+    replPort :: ServiceName
 } deriving (Generic)
 
 instance ToJSON NodeConfig

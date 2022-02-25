@@ -121,7 +121,6 @@ timeOutToRecvTCP_FIN = 1000
 
 maxConnections = 5
 
--- Seems like i can change the type to MonadIO for free. I may want to
 server :: Address
        -> (String -> IO ())
        -> ServerHandler
@@ -169,5 +168,34 @@ server servAddr logger handler = withSocketsDo $ do
                             NSB.sendAll connsock $ appendLenBits answer)
                         (log "server: Client disconnected.")         
 
--- answerPing :: ServerHandler
--- answerPing _ bs = UTF8.fromString <$> if UTF8.toString bs == "ping" then return "pong" else return ""
+
+acceptSingleClient ::
+    Address
+    -> (String -> IO ())
+    -> (Socket -> IO ())
+    -> IO ()
+acceptSingleClient servAddr log f = withSocketsDo $ do
+    bracket (open servAddr) close main
+
+    where
+
+    open servAddr = do 
+        addrinfo <- grabAddressInfo servAddr
+
+        sock <- socket (addrFamily addrinfo) Stream defaultProtocol
+        
+        setSocketOption sock ReusePort 1
+
+        -- bind it to the address we're listening to
+        bind sock (addrAddress addrinfo)
+
+        listen sock 1
+        
+        return sock
+
+    main sock = do
+        (connsock, clientaddr) <- accept sock  -- gets us new socket
+        log "repl: Client connnected."
+        f connsock
+            `finally`
+            (gracefulClose connsock timeOutToRecvTCP_FIN >> log "repl: Closed a connection.")
