@@ -7,7 +7,7 @@ import Options.Applicative
 import Control.Exception (onException)
 import Data.Yaml (decodeFileEither, prettyPrintParseException)
 import System.Exit (exitFailure)
-import Node (LoggingMode(ToFile))
+import Configs (LoggingMode(ToFile))
 
 -- not sure which interface am i going to prefer - cmdline options or config file 
 data CommandOptions = CommandOptions {

@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards #-}
 module Node where
 import Data.Aeson
 import Data.Time
@@ -33,6 +34,15 @@ import Control.Concurrent.STM (newTQueue, writeTQueue)
 import Control.Concurrent.STM.TMQueue
 import Control.Exception (bracket, finally)
 import Data.Universe.Helpers (interleave)
+import Hasql.Session (Session)
+import qualified Hasql.Pool as Pool
+import Text.Pretty.Simple (pShow)
+import Data.Text.Lazy (unpack)
+import System.Exit (exitFailure)
+import Configs (PoolSettings (..), LoggingMode, ConnectionSettings (..), LoggingMode(..))
+import Hasql.Pool (Pool)
+import Hasql.Connection (settings)
+import Data.Text.Encoding (encodeUtf8)
 
 -- Collects functionality common between fullnode and wallet lightnode.
 -- 
@@ -47,16 +57,31 @@ generateKeys = do
     let (pub, priv, _) = RSA.generateKeyPair g keyLength
     return $ Keys pub priv
 
-
 class AppendFixed appState m b where
     appendFixed :: appState -> [b] -> m () 
 
+class HasDB appState where
+    executeDBEither :: appState -> Session a -> IO (Either Pool.UsageError a)
 
--- sendMsg :: Message -> Address -> IO ()
--- sendMsg msg = send (encode msg)
+executeDB :: (HasLogging appState, HasDB appState) =>
+    appState -> Session a -> IO a
+executeDB appState = onErrorLogAndQuit (logger appState) $ executeDBEither appState
 
--- sendMsgToAll :: Message -> [Address] -> IO ()
--- sendMsgToAll msg = sendToAll (encode msg)
+-- Question: Can I recover from errors?
+-- Answer: Yes in doMining (or at least we ignore the error and just go on).
+
+onErrorLogAndQuit :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO a)
+onErrorLogAndQuit log f = f >=> \case
+   Left  e -> log ( unpack $ pShow e) >> exitFailure    -- lets go through intermediate text as we might want to swap log type to Text -> IO ()
+   Right a -> return a
+
+onErrorLogAndNothing :: String -> (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO (Maybe a))
+onErrorLogAndNothing str log usePool = usePool >=> either (\e -> log (str <> unpack (pShow e)) >> return Nothing) (return . Just)
+
+acquire :: PoolSettings -> IO Pool
+acquire PoolSettings{connectionSettings=ConnectionSettings{..}, ..} =
+    Pool.acquire (poolSize, timeout, settings (encodeUtf8 dbhost) dbport (encodeUtf8 dbuser) (encodeUtf8 dbpassword) (encodeUtf8 database))
+
 
 sendAndReceiveMsg ::  Message -> (Maybe Answer -> IO a) -> Address -> IO a
 sendAndReceiveMsg msg k address = sendAndReceive (encode msg) address (k . (>>=  decode))
@@ -241,10 +266,6 @@ catchUpToBlockchain forkMaxDiff targetHash whatsNextBlock appState = do
                     Just (BlockchainQueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
                     _ -> return [] ) address
 
-
-data LoggingMode = ToFile FilePath | ToStdout | ToStderr | Silent deriving Generic
-instance ToJSON LoggingMode
-instance FromJSON LoggingMode
 
 -- Load blockchain config + protocol config + node config + specific config
 

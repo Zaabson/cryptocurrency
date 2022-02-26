@@ -5,9 +5,10 @@ import Data.Maybe (fromJust)
 import BlockCreation (Keys(Keys))
 import Hashing (shash256)
 import Control.Concurrent.Async (wait, Async)
-import Node (Config(..), LoggingMode(..))
+import Node (Config(..))
 import Node (generateKeys)
 import InMemory (logger)
+import Configs (LoggingMode(..))
 
 config = Config {
     blockchainFilepath = "data/fixed_blocks.json",

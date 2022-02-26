@@ -9,12 +9,12 @@ module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
 import Network.Socket (ServiceName, Socket)
-import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys, broadcastAndUpdatePeers)
+import Node (withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys, broadcastAndUpdatePeers, HasDB (executeDBEither), executeDB, onErrorLogAndNothing, onErrorLogAndQuit, acquire)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value, decode)
 import Server (Address(Address), server)
 import MessageHandlers (toServerHandler)
-import Wallet.Node (lightNodeHandler, lightNodeCatchUpToBlockchain, FixedLength (FixedLength), HasDB (executeDB))
+import Wallet.Node (lightNodeHandler, lightNodeCatchUpToBlockchain, FixedLength (FixedLength))
 import BlockType (Genesis, BlockHeader (BlockHeader))
 import Control.Concurrent.AdvSTM.TVar
 import qualified Hasql.Pool as Pool
@@ -34,11 +34,10 @@ import System.Exit (exitFailure)
 import Control.Monad ((>=>))
 import qualified Data.ByteString as B
 import Data.Text (Text)
-import Data.Text.Lazy (unpack)
-import Text.Pretty.Simple (pShow)
+-- import Text.Pretty.Simple (pShow)
 import Data.Aeson.Types (Parser)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
+import Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..), LoggingMode)
 import Hasql.Session (Session)
 import Hasql.Connection (settings)
 import Wallet.Repl (serveRepl, CommandR(..), AddCoinResponse (AddCoinFail, AddCoinSuccess), AddTransactionResponse (AddTransactionSuccess, AddTransactionFail), SendTransactionResponse (SendTransactionFailure, NotEnoughFunds, SendedTransaction), StatusResponse (GetStatusFailure, StatusIs))
@@ -95,7 +94,7 @@ instance AppendFixed AppState AdvSTM BlockHeader where
         onCommit . executeDB appState . Hasql.transaction Serializable Write $ for_ newfixed addFixedBlockHeader
 
 instance HasDB AppState where 
-    executeDB appState = onErrorLogAndQuit (getLogger appState) $ Pool.use (getDBPool appState)  
+    executeDBEither appState = Pool.use (getDBPool appState)  
 -- Turned out in one place I do want to recover from error, in repl where we execute user provided commands.
 
 instance HasLogging AppState where
@@ -110,21 +109,6 @@ withLoadSave fp = bracket
         eload <- eitherDecodeFileStrict fp
         either (return . Left) (fmap Right . newTVarIO) eload)
     (either (const $ return ()) (atomically . readTVar >=> encodeFile fp))
-
-acquire :: PoolSettings -> IO Pool
-acquire PoolSettings{connectionSettings=ConnectionSettings{..}, ..} =
-    Pool.acquire (poolSize, timeout, settings (encodeUtf8 dbhost) dbport (encodeUtf8 dbuser) (encodeUtf8 dbpassword) (encodeUtf8 database))
-
-
-onErrorLogAndQuit :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO a)
-onErrorLogAndQuit log f = f >=> \case
-   Left  e -> log ( unpack $ pShow e) >> exitFailure    -- lets go through intermediate text as we might want to swap log type to Text -> IO ()
-   Right a -> return a
-
--- Question: Can I recover from errors?
-
-onErrorLogAndNothing :: String -> (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO (Maybe a))
-onErrorLogAndNothing str log usePool = usePool >=> either (\e -> log (str <> unpack (pShow e)) >> return Nothing) (return . Just)
 
 -- Execute user's wallet command provided with a handle to db pool that logs the error and projects to Nothing.
 replHandler :: InMemory appState m PeersSet => appState -> (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r

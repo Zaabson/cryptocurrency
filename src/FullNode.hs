@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
 -- {-# LANGUAGE NamedFieldPuns #-}
 -- {-# LANGUAGE RecordWildCards, DeriveGeneric, NamedFieldPuns, LambdaCase, ScopedTypeVariables #-}
 module FullNode where
@@ -14,7 +15,7 @@ import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, ro
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction)
 import qualified Data.Sequence as Seq
-import Node (PeersSet, LoggingMode, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys)
+import Node (PeersSet, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys, HasDB (executeDBEither), acquire)
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
@@ -35,6 +36,14 @@ import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
 import Server (Address(Address), server)
 import InMemory (logger, HasLogging, InMemory (readMemory, writeMemory, modifyMemory, modifyMemoryIO), runAtomically, InMemoryRead (readMemoryIO))
 import System.Exit (exitFailure)
+import Configs (PoolSettings, LoggingMode)
+import Hasql.Pool (Pool)
+import qualified Hasql.Pool as Pool
+import Hasql.Session (Session)
+import Wallet.Session as Wallet (insertOwnedUTXO)
+import Text.Pretty.Simple (pShow)
+import Data.Text.Lazy (unpack)
+
 
 data Config = Config {
         blockchainFilepath :: FilePath,
@@ -44,7 +53,8 @@ data Config = Config {
         port        :: ServiceName,
         blockchainGenesis     :: Genesis,
         minerWaitForTxs :: Bool,
-        forkMaxDiff :: ForkMaxDiff
+        forkMaxDiff :: ForkMaxDiff,
+        walletDatabaseConfig :: PoolSettings
     } deriving (Generic)
 
 instance ToJSON Config
@@ -106,8 +116,9 @@ mining :: ForkMaxDiff       -- constant specyfying at what difference between th
        -> AppState
        -> Bool              -- Do we wait for transaction or produce coinbase-only blocks
        -> (String -> IO ()) -- Logging function
+       -> (forall a . Session a -> IO (Either Pool.UsageError a)) -- db handle
        -> IO ()
-mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} waitForTxs log = forever $ do
+mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, peers} waitForTxs log dbHandle = forever $ do
 
     (lastblockRef, height)  <- atomically getLastBlockReference
 
@@ -163,9 +174,8 @@ mining forkMaxDiff targetHash AppState {blockchainState, incomingTxs, peers} wai
             evaluate . force $ blockHeader block
 
             -- collect utxo in wallet:
-            -- TODO
             log "We mined a coin!"
-            -- _ ownedUTXO
+            dbHandle (Wallet.insertOwnedUTXO ownedUTXO) >>= either (log . unpack . pShow) return
 
             -- Put the newly mined block into blockchain.
             -- Broadcast the block to others.
@@ -310,15 +320,16 @@ instance InMemory AppState STM TransactionQueue  where
     modifyMemory appState f = modifyMemory (incomingTxs appState) ( (\(TransactionQueue seq) -> seq) . f . TransactionQueue)
 
 
-data AppStatePlusLogging = AppStatePlusLogging {
+data AppStatePlus = AppStatePlus {
     getAppState :: AppState,
-    getLogger   :: String -> IO ()
-}
+    getLogger   :: String -> IO (),
+    getDBPool :: Pool
+}    
 
-instance HasLogging AppStatePlusLogging where
+instance HasLogging AppStatePlus where
     logger = getLogger
 
-instance InMemory AppState STM a => InMemory AppStatePlusLogging STM a where
+instance InMemory AppState STM a => InMemory AppStatePlus STM a where
     readMemory = readMemory . getAppState
     writeMemory = writeMemory . getAppState
     modifyMemory = modifyMemory . getAppState
@@ -327,8 +338,11 @@ instance InMemory AppState STM BlockchainData where
     readMemory appState = BlockchainData <$> readMemory appState <*> readMemory appState <*> readMemory appState <*> readMemory appState
     writeMemory appState (BlockchainData a b c d) = writeMemory appState a >> writeMemory appState b >> writeMemory appState c >> writeMemory appState d
 
-instance AppendFixed AppStatePlusLogging STM Block where
+instance AppendFixed AppStatePlus STM Block where
     appendFixed appState newfixed = modifyMemory appState ( Fixed . (newfixed ++ ) . getFixedBlocks)
+
+instance HasDB AppStatePlus where 
+    executeDBEither appState = Pool.use (getDBPool appState)
 
 -- MessageHandler for full node. Describes actions on every type of incoming message.
 -- 
@@ -369,7 +383,8 @@ runFullNode config =
 
             case liftM2 (,) epeers efixed of
                 Left err -> log err >> exitFailure
-                Right (peers, fixed) -> main log peers fixed
+                Right (peers, fixed) -> bracket (acquire $ walletDatabaseConfig config) Pool.release $ 
+                        main log peers fixed
 
     where
         targetHash = difficultyToTargetHash $ targetDifficulty config
@@ -378,19 +393,19 @@ runFullNode config =
         serverAddr = Address "localhost" (port config)
         runServer log appState = server serverAddr log (toServerHandler (fullNodeHandler forkMaxDiff1 targetHash appState) log)
 
-        main log peers fixed = do
+        main log peers fixed pool = do
             log "app: Loaded peers and fixed blocks."
 
             blockchainState <- initBlockchainState (blockchainGenesis config) fixed
             appSt        <- initAppState blockchainState peers
-            let appState = AppStatePlusLogging appSt log
+            let appState = AppStatePlus appSt log pool
 
             -- query for blocks after our last block
             forkIO $ fullNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
 
             -- forkIO runServer
             -- forkIO mine
-            concurrently_ (mine log appSt) (runServer log appState)
+            concurrently_ (mine log appSt (Pool.use pool)) (runServer log appState)
 
             -- return ()
 

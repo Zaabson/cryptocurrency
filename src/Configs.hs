@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Wallet.Configs where
+module Configs where
 
-import Node (LoggingMode)
 import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import Data.Time.Clock (NominalDiffTime)
@@ -11,6 +10,11 @@ import Data.Binary (Word16)
 import BlockChain (ForkMaxDiff)
 import BlockType (Genesis)
 import Data.Aeson (FromJSON, ToJSON)
+
+data LoggingMode = ToFile FilePath | ToStdout | ToStderr | Silent deriving Generic
+instance ToJSON LoggingMode
+instance FromJSON LoggingMode
+
 
 data NodeConfig = NodeConfig {
     port  :: ServiceName,

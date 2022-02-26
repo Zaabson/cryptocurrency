@@ -7,7 +7,7 @@ import MessageHandlers (MessageHandler, ignoreBlockchainQuery, ignoreTransaction
 import MessageType (Answer (BlockAnswer), ReceivedBlock (ReceivedBlock), Message (BlockMessage))
 import BlockType (Block (blockHeader, transactions), BlockHeader (BlockHeader), Coinbase (blockHeight))
 import qualified InMemory
-import Node (PeersSet, broadcastAndUpdatePeers, catchUpToBlockchain, AppendFixed (appendFixed))
+import Node (PeersSet, broadcastAndUpdatePeers, catchUpToBlockchain, AppendFixed (appendFixed), HasDB, executeDB)
 import BlockChain (BlockchainUpdated(BlockInserted, FutureBlock, BlockAlreadyInserted, BlockInvalid, BLockInsertedLinksToRoot), ForkMaxDiff, updateWithBlockHeader, Fixed (Fixed), Lively (Lively), Future (Future))
 import Control.Concurrent (forkIO)
 import Control.Monad (join)
@@ -23,9 +23,6 @@ import BlockCreation (blockRef)
 import Control.Concurrent.Async (forConcurrently_)
 import Data.Int (Int64)
 import Data.Vector (fromList)
-
-class HasDB appState where
-    executeDB :: appState -> Session a -> IO a
 
 -- Blockheight is kept in coinbase, absent in blockheader.
 -- TODO: Fix resulting ineffectivenes.

@@ -2,9 +2,9 @@
 
 import qualified Wallet.Wallet as Wallet 
 import Wallet.Wallet ( runWallet )
-import Node (LoggingMode(ToStdout, ToStderr))
-import Wallet.Configs (PoolSettings (poolSize, timeout, PoolSettings), ConnectionSettings (..), WalletConfig(WalletConfig), NodeConfig(..), BlockchainConfig(..))
-import qualified Wallet.Configs as Configs 
+import Configs (PoolSettings (poolSize, timeout, PoolSettings), ConnectionSettings (..), 
+    WalletConfig(WalletConfig), NodeConfig(..), BlockchainConfig(..), LoggingMode(ToStdout, ToStderr))
+import qualified Configs 
 import Data.Time.Clock (secondsToNominalDiffTime)
 import Data.Yaml (encodeFile, decodeFileEither, prettyPrintParseException)
 import BlockChain (ForkMaxDiff(ForkMaxDiff))
