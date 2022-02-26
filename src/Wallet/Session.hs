@@ -62,3 +62,7 @@ selectOwnedByStatus status = V.map makeOwnedUTXO <$> Session.statement status St
                         (!! fromEnum vout) . outputs         <$> Aeson.fromJSON json
                         
                 in OwnedUTXO (UTXO txid (toInteger vout) output) (Keys pub priv)
+
+
+updateBlockRef :: BlockReference -> V.Vector TXID -> Session.Session Int64
+updateBlockRef blockRef txids = Session.statement (blockRef, txids) Statement.updateBlockRef

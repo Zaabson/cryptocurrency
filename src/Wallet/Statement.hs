@@ -109,13 +109,14 @@ updateTxStatusMany :: Statement (Status, Vector TXID) ()
 updateTxStatusMany = Statement sql (contrazip2 encodeStatus (vector $ contramap coerce E.bytea)) D.noResult True
     where
         sql = "update transaction set txStatus = $1 from unnest($2) as t(num) where t.num = txId"
-        vector =
-            E.param .
-            E.nonNullable .
-            E.array .
-            E.dimension foldl' .
-            E.element .
-            E.nonNullable
+
+vector =
+    E.param .
+    E.nonNullable .
+    E.array .
+    E.dimension foldl' .
+    E.element .
+    E.nonNullable
 
 addFixedBlockHeader :: Statement (BlockReference , BlockHeader) ()
 addFixedBlockHeader = Statement sql e D.noResult True
@@ -161,13 +162,6 @@ selectStatus = Statement sql encodeHash (D.singleRow rowStatus) True
 -- Effective implementation for such query would need changing the data model by adding outputs, inputs tables and destructing transaction into components
 -- Let's go with bruteforce solution in a hope that wallet only stores medium amounts of transactions and not that often sends transactions. 
 
--- selectOwnedByStatus :: Statement Status (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, StoredTransaction))
--- sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txStatus=$1 "
--- sql = "select (txId, txData, txStatus, txIsCoinbase) from transaction where txStatus=$1 "
--- sql = "(select (txId) from transaction where txStatus=$1) intersect (select (keysTxId) from ownedKeys)"
--- sql = "(select distinct (txId) from transaction where txStatus=$1 and txId in (select (keysTxId) from ownedKeys)) "
--- sql - "select (txId, vout, pubkey, privkey, txData) from transaction, ownedKeys where keysTxId = txId "
-
 selectOwnedByStatus :: Statement Status (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Aeson.Value, Bool))
 selectOwnedByStatus = Statement sql encodeStatus (D.rowVector d) True
     where
@@ -180,3 +174,9 @@ selectOwnedByStatus = Statement sql encodeStatus (D.rowVector d) True
             <*> rowBinary
             <*> nonNullableColumn jsonb2aeson
             <*> nonNullableColumn D.bool
+
+updateBlockRef :: Statement (BlockReference , Vector TXID) Int64
+updateBlockRef = Statement sql e D.rowsAffected True
+    where
+        sql = "update transaction set txBlockId = $1 from unnest($2) as t(num) where t.num = txId"
+        e = contrazip2 encodeHash (vector $ contramap coerce E.bytea)

@@ -16,12 +16,13 @@ import Hashing (TargetHash, shash256)
 import qualified Data.Set as Set
 import BlockValidation (validateNonceAndMerkle)
 import Wallet.Type (Status(Validated))
-import Wallet.Session (updateTxStatusMany, updateStatusByBlock, addFixedBlockHeader)
+import Wallet.Session (updateTxStatusMany, updateStatusByBlock, addFixedBlockHeader, updateBlockRef)
 import Hasql.Session (Session)
 import Hasql.Transaction.Sessions (transaction, IsolationLevel (Serializable), Mode (Write))
 import BlockCreation (blockRef)
 import Control.Concurrent.Async (forConcurrently_)
 import Data.Int (Int64)
+import Data.Vector (fromList)
 
 class HasDB appState where
     executeDB :: appState -> Session a -> IO a
@@ -73,38 +74,51 @@ receiveBlockLight :: (HasLogging appState,
     => ForkMaxDiff -> TargetHash -> appState -> MsgHandler Block ReceivedBlock
 receiveBlockLight forkMaxDiff targetHash appState = MsgHandler $ \block -> do
 
-    forkIO . join . runAtomically $ do
-    -- Note that this atomical operation is time-consuming. TODO: Benchmark how big of a problem that is.
-        lively   <- readMemory appState -- stm
-        -- fixed    <- readMemory appState -- db
-        future   <- readMemory appState -- stm
+    if validateNonceAndMerkle targetHash block then do
+        -- add BlockReference to transactions from this block that are in database
+        forkIO $ do 
+            txAffected <- executeDB appState $ 
+                updateBlockRef (shash256 . Right . blockHeader $ block) (fromList . map (shash256 . Right) $ transactions block)
+            logger appState $ "handler: Updated " <> show txAffected <> " transactions with their blockId."
+        -- 
+        updateBlockchain block
+        return ReceivedBlock
+    else
+        -- TODO: Could add a message for invalid block, but how could a node really use this information? 
+        return ReceivedBlock
 
-        -- try to link a new block to one of the recent blocks
-        case updateWithBlockHeader forkMaxDiff targetHash (blockHeader block) lively future of
-            BlockInserted lively' newfixed -> do
-                writeMemory appState lively' -- stm
-                appendFixed appState newfixed  -- db, also different interface to only add new blocks. 
-                modifyMemory appState (+ FixedLength (fromIntegral $ length newfixed))
-                return $ do
-                    logger appState "handler: Received block was inserted into chain."
-                    -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                    broadcastAndUpdatePeers appState (BlockMessage block) (BlockAnswer ReceivedBlock)
-            FutureBlock future'   -> do
-                writeMemory appState future'  -- stm
-                return $ do
-                    logger appState "handler: Received block inserted into futures waiting list."
-                    -- We received a block that doesn't link to a known recent chain. Let's query for new blocks.
-                    lightNodeCatchUpToBlockchain forkMaxDiff targetHash appState
-            BlockAlreadyInserted -> return $ logger appState "handler: Received block was already present in the chain."
-            BlockInvalid         -> return $ logger appState "handler: Received block is invalid."
-            BLockInsertedLinksToRoot lively' -> do
-                writeMemory appState lively' -- stm
-                return $ do
-                    logger appState "handler: Inserted block linking to genesis."
-                    -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
-                    broadcastAndUpdatePeers appState (BlockMessage block) (BlockAnswer ReceivedBlock)
+    where 
+        updateBlockchain block = forkIO . join . runAtomically $ do
+        -- Note that this atomical operation is time-consuming. TODO: Benchmark how big of a problem that is.
+            lively   <- readMemory appState -- stm
+            -- fixed    <- readMemory appState -- db
+            future   <- readMemory appState -- stm
 
-    return ReceivedBlock
+            -- try to link a new block to one of the recent blocks
+            case updateWithBlockHeader forkMaxDiff targetHash (blockHeader block) lively future of
+                BlockInserted lively' newfixed -> do
+                    writeMemory appState lively' -- stm
+                    appendFixed appState newfixed  -- db, also different interface to only add new blocks. 
+                    modifyMemory appState (+ FixedLength (fromIntegral $ length newfixed))
+                    return $ do
+                        logger appState "handler: Received block was inserted into chain."
+                        -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
+                        broadcastAndUpdatePeers appState (BlockMessage block) (BlockAnswer ReceivedBlock)
+                FutureBlock future'   -> do
+                    writeMemory appState future'  -- stm
+                    return $ do
+                        logger appState "handler: Received block inserted into futures waiting list."
+                        -- We received a block that doesn't link to a known recent chain. Let's query for new blocks.
+                        lightNodeCatchUpToBlockchain forkMaxDiff targetHash appState
+                BlockAlreadyInserted -> return $ logger appState "handler: Received block was already present in the chain."
+                BlockInvalid         -> return $ logger appState "handler: Received block is invalid."
+                BLockInsertedLinksToRoot lively' -> do
+                    writeMemory appState lively' -- stm
+                    return $ do
+                        logger appState "handler: Inserted block linking to genesis."
+                        -- Broadcast it to others. Block is re-broadcasted only the first time when we add it to blockchain.  
+                        broadcastAndUpdatePeers appState (BlockMessage block) (BlockAnswer ReceivedBlock)
+
 
 
 
