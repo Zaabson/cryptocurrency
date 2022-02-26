@@ -25,6 +25,7 @@ import Data.Word
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON)
 import Data.Aeson.Types (FromJSONKey, ToJSONKey)
+import GHC.IO (unsafeInterleaveIO)
 
 int64ToByteString :: Int64 -> B.ByteString
 int64ToByteString n = B.pack [aaaaaaaa, aaaaaaa, aaaaaa, aaaaa, aaaa, aaa, aa, a]
@@ -83,12 +84,16 @@ readMessage sock = do
             else
                 keepReading sock len
 
+-- Lazily read all messages from socket.
 readAllMessages :: Socket -> IO [B.ByteString]
 readAllMessages sock = do
     mmsg <- readMessage sock
     case mmsg of 
-      Nothing -> return []
-      Just bs -> (bs :) <$> readAllMessages sock
+        Nothing -> return []
+        Just bs -> do 
+            --   lazy IO, list produced on demand
+            msgs <- unsafeInterleaveIO $ readAllMessages sock
+            return $ bs : msgs 
 
 -- type HostName = String
 -- Either a host name e.g., "haskell.org" or a numeric host address string consisting of a dotted decimal IPv4 address or an IPv6 address e.g., "192.168.0.1".
@@ -134,8 +139,8 @@ server servAddr logger handler = withSocketsDo $ do
         addrinfo <- grabAddressInfo servAddr
 
         sock <- socket (addrFamily addrinfo) Stream defaultProtocol
-        
         setSocketOption sock ReusePort 1
+        
 
         -- bind it to the address we're listening to
         bind sock (addrAddress addrinfo)
@@ -150,7 +155,7 @@ server servAddr logger handler = withSocketsDo $ do
     procRequest :: (String -> IO ()) -> Socket -> IO ThreadId
     procRequest log mastersock =
         do  (connsock, clientaddr) <- accept mastersock  -- gets us new socket
-            log "server: Client connnected."
+            log "server: Client connected."
             procConnection log connsock clientaddr 
                 `forkFinally`
                 const (gracefulClose connsock timeOutToRecvTCP_FIN)
@@ -195,7 +200,7 @@ acceptSingleClient servAddr log f = withSocketsDo $ do
 
     main sock = do
         (connsock, clientaddr) <- accept sock  -- gets us new socket
-        log "repl: Client connnected."
+        log "repl: Client connected."
         f connsock
             `finally`
             (gracefulClose connsock timeOutToRecvTCP_FIN >> log "repl: Closed a connection.")
