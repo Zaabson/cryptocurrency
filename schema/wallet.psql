@@ -11,7 +11,7 @@ create table transaction (
     txBlockId bytea null,
     txData jsonb not null,
     txStatus transactionStatus not null,
-    txIsCoinbase boolean not null
+    txIsCoinbase boolean not null,
     check (txBlockId is not null or txStatus != 'validated')
 );
 
@@ -24,6 +24,6 @@ create table ownedKeys (
     keysTxId bytea not null references transaction,
     vout integer not null,
     pubKey bytea not null,
-    privKey bytea not null
+    privKey bytea not null,
     primary key (keysTxId, vout)
 )
