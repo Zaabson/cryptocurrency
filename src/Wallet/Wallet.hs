@@ -9,7 +9,7 @@ module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
 import Network.Socket (ServiceName, Socket)
-import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys)
+import Node (LoggingMode, withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys, broadcastAndUpdatePeers)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value, decode)
 import Server (Address(Address), server)
@@ -41,10 +41,11 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Wallet.Configs (PoolSettings (..), ConnectionSettings (..), WalletConfig(..), NodeConfig(..), BlockchainConfig(..))
 import Hasql.Session (Session)
 import Hasql.Connection (settings)
-import Wallet.Repl (serveRepl, CommandR(..), AddCoinResponse (AddCoinFail, AddCoinSuccess), AddTransactionResponse (AddTransactionSuccess, AddTransactionFail), SendTransactionResponse (SendTransactionFailure, NotEnoughFunds))
+import Wallet.Repl (serveRepl, CommandR(..), AddCoinResponse (AddCoinFail, AddCoinSuccess), AddTransactionResponse (AddTransactionSuccess, AddTransactionFail), SendTransactionResponse (SendTransactionFailure, NotEnoughFunds, SendedTransaction), StatusResponse (GetStatusFailure, StatusIs))
 import Wallet.Type (StoredTransaction(StoredTransaction), Status (Waiting, Validated))
 import BlockCreation (Keys(Keys), OwnedUTXO (OwnedUTXO), createSendingTransaction)
 import BlockValidation (UTXO(UTXO))
+import MessageType (Answer(TransactionAnswer), Message (TransactionMessage), ReceivedTransaction (ReceivedTransaction))
 
 data BlockchainState = BlockchainState {
     getGenesis :: Genesis,
@@ -122,32 +123,35 @@ onErrorLogAndQuit log f = f >=> \case
 
 -- Question: Can I recover from errors?
 
-
+onErrorLogAndNothing :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO (Maybe a))
+onErrorLogAndNothing log usePool = usePool >=> either (\e -> log (unpack $ pShow e) >> return Nothing) (return . Just)
 
 -- Execute user's wallet command provided with a handle to db pool that logs the error and projects to Nothing.
-replHandler :: (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r
+replHandler :: InMemory appState m PeersSet => appState -> (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r
 -- replHandler :: appState -> CommandR r-> IO r
-replHandler usePool (AddCoin (OwnedUTXO (UTXO txid vout _) (Keys pub priv))) = do 
+replHandler appState usePool (AddCoin (OwnedUTXO (UTXO txid vout _) (Keys pub priv))) = do 
     -- we discard Output information from OwnedUTXO 
     m <- usePool $ insertOwnedKeys txid (fromInteger vout) pub priv
     case m of 
         Nothing -> return AddCoinFail
         Just () -> return AddCoinSuccess 
 
-replHandler usePool (AddTransaction tx blockref) = do 
+replHandler appState usePool (AddTransaction tx blockref) = do 
     m <- usePool $ insertTransaction (StoredTransaction (shash256 tx) blockref tx Waiting)
     case m of 
         Nothing -> return AddTransactionSuccess 
         Just () -> return AddTransactionFail
 
-replHandler usePool (SendTransaction recipient n) = do 
+replHandler appState usePool (SendTransaction recipient n) = do 
     newkeys <- generateKeys
     res <- usePool (db newkeys)
     case res of 
       -- db session error
-      Nothing -> return SendTransactionFailure 
-      Just Nothing -> return NotEnoughFunds 
-      Just (Just newtx) -> _ newtx   -- broadcast transaction
+        Nothing -> return SendTransactionFailure 
+        Just Nothing -> return NotEnoughFunds 
+        Just (Just newtx) -> do
+            forkIO $ broadcastAndUpdatePeers appState (TransactionMessage newtx) (TransactionAnswer ReceivedTransaction)   -- broadcast transaction
+            return SendedTransaction
 
     where 
         db newkeys = do
@@ -163,7 +167,11 @@ replHandler usePool (SendTransaction recipient n) = do
                     return $ Just newtx
 
 
-replHandler usePool (GetStatus txid) = _ $ selectStatus txid
+replHandler appState usePool (GetStatus txid) = do 
+    ms <- usePool $ selectStatus txid
+    case ms of 
+        Nothing -> return GetStatusFailure
+        Just status -> return (StatusIs txid status)
 
 runWallet :: WalletConfig  -> IO ()
 runWallet config =
@@ -180,6 +188,7 @@ runWallet config =
         serverAddr = Address "localhost" (port $ nodeConfig config)
         replAddr   = Address "localhost" (replPort config)
         runServer log appState = server serverAddr log (toServerHandler (lightNodeHandler forkMaxDiff1 targetHash appState) log)
+        runRepl log appState pool = serveRepl replAddr log (replHandler appState (onErrorLogAndNothing log (Pool.use pool)))
 
         main log pool peers = do
             log "wallet: Started."
@@ -195,7 +204,7 @@ runWallet config =
 
             -- forkIO runServer
             -- forkIO mine
-            concurrently_ (serveRepl replAddr log _) (runServer log appState)
+            concurrently_ (runRepl log appState pool) (runServer log appState)
             runServer log appState
 
         initBlockchainState genesis fixedLength =

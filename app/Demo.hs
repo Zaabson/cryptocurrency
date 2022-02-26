@@ -6,7 +6,7 @@ import BlockCreation (Keys(Keys))
 import Hashing (shash256)
 import Control.Concurrent.Async (wait, Async)
 import Node (Config(..), LoggingMode(..))
-import FullNode (generateKeys)
+import Node (generateKeys)
 import InMemory (logger)
 
 config = Config {

@@ -9,10 +9,10 @@ import BlockType (Transaction, TXID, Cent, PublicAddress, Coinbase, BlockReferen
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON, eitherDecode, encode)
 import Server (readAllMessages, Address, acceptSingleClient)
-import Node (Status)
 import qualified Data.ByteString.Lazy as Lazy
 import Data.Bifunctor (second)
 import Network.Socket (Socket)
+import Wallet.Type (Status)
 import Client (send)
 
 -- Non-GADT type to transform to and from JSON data. 
