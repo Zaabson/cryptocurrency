@@ -40,8 +40,8 @@ recvAnswer :: FromJSON r => CliState -> IO (Either String r)
 recvAnswer state = do
     mmr <- fmap decode <$> readMessage (cliHandle state)
     case mmr of
-      Nothing -> return $ Left "cli: Message ends short unexpectedly error."
-      Just Nothing -> return $ Left "cli: Answer decoding error."
+      Nothing -> return $ Left "cli: Message ends short unexpectedly error.\n"
+      Just Nothing -> return $ Left "cli: Answer decoding error.\n"
       Just (Just r) -> return $ Right r
 
 -- Send repl command to wallet app. 

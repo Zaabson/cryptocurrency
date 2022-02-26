@@ -123,8 +123,8 @@ onErrorLogAndQuit log f = f >=> \case
 
 -- Question: Can I recover from errors?
 
-onErrorLogAndNothing :: (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO (Maybe a))
-onErrorLogAndNothing log usePool = usePool >=> either (\e -> log (unpack $ pShow e) >> return Nothing) (return . Just)
+onErrorLogAndNothing :: String -> (String -> IO ()) -> (Session a -> IO (Either Pool.UsageError a)) -> (Session a -> IO (Maybe a))
+onErrorLogAndNothing str log usePool = usePool >=> either (\e -> log (str <> unpack (pShow e)) >> return Nothing) (return . Just)
 
 -- Execute user's wallet command provided with a handle to db pool that logs the error and projects to Nothing.
 replHandler :: InMemory appState m PeersSet => appState -> (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r
@@ -188,7 +188,8 @@ runWallet config =
         serverAddr = Address "localhost" (port $ nodeConfig config)
         replAddr   = Address "localhost" (replPort config)
         runServer log appState = server serverAddr log (toServerHandler (lightNodeHandler forkMaxDiff1 targetHash appState) log)
-        runRepl log appState pool = serveRepl replAddr log (replHandler appState (onErrorLogAndNothing log (Pool.use pool)))
+        runRepl log appState pool =
+            serveRepl replAddr log (replHandler appState (onErrorLogAndNothing "repl: Execution of user command ended with:\n" log (Pool.use pool)))
 
         main log pool peers = do
             log "wallet: Started."
