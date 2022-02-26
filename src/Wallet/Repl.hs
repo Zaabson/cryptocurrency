@@ -48,7 +48,7 @@ parseCommand = second commandFromJSON . eitherDecode
 data AddCoinResponse
     = AddCoinSuccess
     | AddCoinFail
-    deriving (Generic)
+    deriving (Generic, Show)
 
 instance ToJSON AddCoinResponse 
 instance FromJSON AddCoinResponse 
@@ -56,7 +56,7 @@ instance FromJSON AddCoinResponse
 data AddTransactionResponse
     = AddTransactionSuccess
     | AddTransactionFail
-    deriving (Generic)
+    deriving (Generic, Show)
 
 instance ToJSON AddTransactionResponse 
 instance FromJSON AddTransactionResponse 
@@ -65,7 +65,7 @@ data SendTransactionResponse
     = SendedTransaction
     | NotEnoughFunds
     | SendTransactionFailure
-    deriving (Generic)
+    deriving (Generic, Show)
 
 instance ToJSON SendTransactionResponse 
 instance FromJSON SendTransactionResponse 
@@ -73,7 +73,7 @@ instance FromJSON SendTransactionResponse
 data StatusResponse
     = StatusIs TXID Status
     | GetStatusFailure
-    deriving (Generic)
+    deriving (Generic, Show)
 
 instance ToJSON StatusResponse 
 instance FromJSON StatusResponse 
@@ -88,8 +88,8 @@ processMessages sock log f = do
     tillLeft cmds
     where   
         -- loops till left error 
-        tillLeft [] = return ()
-        tillLeft (Left str : es) = log ("Command decoding error: \n" <> str)
+        tillLeft [] = log "repl: Finished processing."
+        tillLeft (Left str : es) = log ("repl: Command decoding error: \n" <> str)
         tillLeft (Right (Command c) : es) = do
             resp <- f c
             send sock $ encode resp

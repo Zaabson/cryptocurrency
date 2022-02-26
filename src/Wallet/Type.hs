@@ -11,7 +11,7 @@ data Status
     | Waiting   -- still not in fixed 
     | Discarded -- optional usage for when we observe tx being thrown from lively.
     -- ^ another option is to use versioning with blockheight 
-    deriving (Generic)
+    deriving (Generic, Show)
 
 instance ToJSON Status
 instance FromJSON Status

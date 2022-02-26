@@ -204,8 +204,8 @@ runWallet config =
 
             -- forkIO runServer
             -- forkIO mine
+            log $ "wallet: Serving repl on port: " <> replPort config <> "."
             concurrently_ (runRepl log appState pool) (runServer log appState)
-            runServer log appState
 
         initBlockchainState genesis fixedLength =
             BlockchainState genesis
