@@ -255,7 +255,8 @@ fullNodeCatchUpToBlockchain forkMaxDiff targetHash appState = do
 receiveBlock :: (HasLogging appState, InMemory appState m UTXOPool,
     InMemory appState m PeersSet, InMemory appState m BlockchainData,
     InMemory appState m LivelyBlocks,
-    InMemory appState m FutureBlocks, AppendFixed appState m Block) =>
+    InMemory appState m FutureBlocks,
+    AppendFixed appState m Block) =>
     ForkMaxDiff -> TargetHash -> appState -> MsgHandler Block ReceivedBlock
 receiveBlock forkMaxDiff targetHash appState = MsgHandler $ \block -> do
     -- do the validation etc concurrently not to hold a connection for long

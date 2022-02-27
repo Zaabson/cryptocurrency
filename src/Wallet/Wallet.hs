@@ -25,7 +25,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.Async (concurrently_)
 import InMemory (HasLogging (logger), InMemory (readMemory, writeMemory, modifyMemory))
 import Control.Concurrent.AdvSTM (AdvSTM, onCommit, atomically)
-import Wallet.Session (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction, insertOwnedKeys, selectOwnedByStatus)
+import Wallet.Session (addFixedBlockHeader, selectFixedCount, selectStatus, insertTransaction, insertOwnedKeys, selectOwnedByStatus, updateTxStatusByBlock)
 import Data.Foldable (for_, Foldable (toList))
 import Hasql.Transaction (statement)
 import qualified Hasql.Transaction.Sessions as Hasql
@@ -91,7 +91,9 @@ instance InMemory AppState AdvSTM FixedLength  where
 
 instance AppendFixed AppState AdvSTM BlockHeader where
     appendFixed appState newfixed = 
-        onCommit . executeDB appState . Hasql.transaction Serializable Write $ for_ newfixed addFixedBlockHeader
+        onCommit . executeDB appState . for_ newfixed $ \fb -> Hasql.transaction Serializable Write $ do 
+            addFixedBlockHeader fb
+            updateTxStatusByBlock Validated (shash256 $ Right fb)
 
 instance HasDB AppState where 
     executeDBEither appState = Pool.use (getDBPool appState)  

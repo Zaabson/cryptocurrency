@@ -100,10 +100,11 @@ selectTxIdByBlock = Statement sql encodeHash (D.rowVector rowHash) True
 
 
 -- Update txs statuses for transactions from block
--- updateTx :: Statement (BlockReference, Status) Int64
--- updateTx = Statement sql (contrazip2 encodeHash encodeStatus) D.rowsAffected True
---     where 
---         sql = "update transaction set tx_status = $2 where tx_block_id = $1"
+updateTxStatusByBlock :: Statement (Status, BlockReference) Int64
+updateTxStatusByBlock = Statement sql (contrazip2 encodeStatus encodeHash) D.rowsAffected True
+    where 
+        sql = "update transaction set tx_status = ($1 :: transaction_status) where tx_block_id = $2"
+
 
 updateTxStatusMany :: Statement (Status, Vector TXID) ()
 updateTxStatusMany = Statement sql (contrazip2 encodeStatus (vector $ contramap coerce E.bytea)) D.noResult True

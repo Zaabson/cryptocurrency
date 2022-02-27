@@ -22,10 +22,14 @@ updateTxStatusMany status txids = Transaction.statement (status, txids) Statemen
 
 
 -- Select transactions with given blockRefence, change statuses to status for the ones that predicate evaluates true.
-updateStatusByBlock :: BlockReference -> (TXID -> Bool) -> Status -> DBTransaction.Transaction ()
-updateStatusByBlock blockref pred status = do 
+updateStatusByBlockSelected :: BlockReference -> (TXID -> Bool) -> Status -> DBTransaction.Transaction ()
+updateStatusByBlockSelected blockref pred status = do 
     txids <- Transaction.statement blockref Statement.selectTxIdByBlock
     updateTxStatusMany Validated (V.filter pred txids)
+
+updateTxStatusByBlock :: 
+    Status -> BlockReference -> Transaction.Transaction Int64 
+updateTxStatusByBlock status blockRef = Transaction.statement (status, blockRef) Statement.updateTxStatusByBlock
 
 addFixedBlockHeader :: BlockHeader -> DBTransaction.Transaction ()
 addFixedBlockHeader blockHeader = Transaction.statement (shash256 $ Right blockHeader, blockHeader) Statement.addFixedBlockHeader
