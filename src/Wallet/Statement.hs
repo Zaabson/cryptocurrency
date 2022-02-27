@@ -80,35 +80,35 @@ encodeStatus = E.param . E.nonNullable $ E.enum status2str
 selectTxByStatus :: Statement Status (Vector (TXID, Maybe BlockReference, Aeson.Value, Status, Bool))
 selectTxByStatus = Statement sql encodeStatus (D.rowVector txDecoder) True
     where
-        sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txStatus = $1"
+        sql = "select (tx_id, tx_block_id, tx_data, tx_status, tx_is_coinbase) from transaction where tx_status = ($1 :: transaction_status)"
 
 
 -- selectTxByBlock :: Statement BlockReference (Vector (TXID, Maybe BlockReference, Aeson.Value, Status, Bool))
 -- selectTxByBlock = Statement sql encodeHash (D.rowVector txDecoder) True
 --     where
---         sql = "select (txId, txBlockId, txData, txStatus, txIsCoinbase) from transaction where txBlockId is not null and txBlockId = $1"
+--         sql = "select (tx_id, tx_block_id, tx_data, tx_status, tx_is_coinbase) from transaction where tx_block_id is not null and tx_block_id = $1"
 
 selectTxIdByBlock :: Statement BlockReference (Vector TXID)
 selectTxIdByBlock = Statement sql encodeHash (D.rowVector rowHash) True
     where
-        sql = "select txId from transaction where (txBlockId is not null) and (txBlockId = $1)"
+        sql = "select tx_id from transaction where (tx_block_id is not null) and (tx_block_id = $1)"
 
 -- updateTxStatus :: Statement (Status, TXID) ()
 -- updateTxStatus = Statement sql (contrazip2 encodeStatus encodeHash) D.noResult True
 --     where
---         sql = "update transaction set txStatus = $1 where txId = $2"
+--         sql = "update transaction set tx_status = $1 where tx_id = $2"
 
 
 -- Update txs statuses for transactions from block
 -- updateTx :: Statement (BlockReference, Status) Int64
 -- updateTx = Statement sql (contrazip2 encodeHash encodeStatus) D.rowsAffected True
 --     where 
---         sql = "update transaction set txStatus = $2 where txBlockId = $1"
+--         sql = "update transaction set tx_status = $2 where tx_block_id = $1"
 
 updateTxStatusMany :: Statement (Status, Vector TXID) ()
 updateTxStatusMany = Statement sql (contrazip2 encodeStatus (vector $ contramap coerce E.bytea)) D.noResult True
     where
-        sql = "update transaction set txStatus = $1 from unnest($2) as t(num) where t.num = txId"
+        sql = "update transaction set tx_status = ($1 :: transaction_status) from unnest($2) as t(num) where t.num = tx_id"
 
 vector =
     E.param .
@@ -118,28 +118,37 @@ vector =
     E.element .
     E.nonNullable
 
+-- Insert fixed block header if not already inserted.
 addFixedBlockHeader :: Statement (BlockReference , BlockHeader) ()
 addFixedBlockHeader = Statement sql e D.noResult True
     where
-        sql = "insert into fixedHeader values ($1, $2)"
+        sql = "insert into fixed_header values ($1, $2) \
+        \ on conflict (block_id) do nothing"
         e = contrazip2 encodeHash (E.param . E.nonNullable $ aeson2jsonb)
 
 selectFixedCount :: Statement () Int64
 selectFixedCount = Statement sql E.noParams (D.singleRow . D.column . D.nonNullable $ D.int8) True
     where
-        sql = "select count(*) from fixedHeader"
+        sql = "select count(*) from fixed_header"
 
-
+-- Inserts a transaction, do nothing on conflicting txid (that is when transaction already in db)
 insertTransaction :: Statement (TXID, Maybe BlockReference, Aeson.Value, Status, Bool) ()
 insertTransaction = Statement sql e D.noResult True
     where
-        sql = "insert into transaction (txId, txBlockId, txData, txStatus, Bool) values ($1, $2, $3, $4, $5)"
+        sql = "insert into transaction (tx_id, tx_block_id, tx_data, tx_status, tx_is_coinbase) \
+        \ values ($1, $2, $3, $4 :: transaction_status, $5) \
+        \ on conflict (tx_id) do nothing"
         e = contrazip5
             encodeHash
             encodeHashNull
             (E.param . E.nonNullable $ aeson2jsonb)
             encodeStatus
             (E.param . E.nonNullable $ E.bool)
+
+-- -- Inserts a transaction error on conflict:
+--         sql = "insert into transaction (tx_id, tx_block_id, tx_data, tx_status, tx_is_coinbase) \
+--         \ values ($1, $2, $3, $4 :: transaction_status, $5)"
+
 
 encodeBinary :: Binary a => E.Params a
 encodeBinary = contramap (toStrict . Binary.encode) . E.param . E.nonNullable $ E.bytea
@@ -150,13 +159,13 @@ rowBinary = Binary.decode . fromStrict <$> (D.column . D.nonNullable $ D.bytea)
 insertOwnedKeys :: Statement (TXID , Int32, RSA.PublicKey, RSA.PrivateKey) ()
 insertOwnedKeys = Statement sql e D.noResult True
     where
-        sql = "insert into ownedKeys (keysTxId, vout, pubKey, privKey) values ($1, $2, $3, $4)"
+        sql = "insert into owned_keys (keys_tx_id, vout, pub_key, priv_key) values ($1, $2, $3, $4)"
         e = contrazip4 encodeHash (E.param $ E.nonNullable E.int4) encodeBinary encodeBinary
 
 selectStatus :: Statement TXID Status
 selectStatus = Statement sql encodeHash (D.singleRow rowStatus) True
     where
-        sql = "select txStatus from transaction where txId = $1"
+        sql = "select tx_status from transaction where tx_id = $1"
 
 -- selectTxsForAmount :: Statement Int64 (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Cent, PublicAddress))
 -- Effective implementation for such query would need changing the data model by adding outputs, inputs tables and destructing transaction into components
@@ -165,7 +174,7 @@ selectStatus = Statement sql encodeHash (D.singleRow rowStatus) True
 selectOwnedByStatus :: Statement Status (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Aeson.Value, Bool))
 selectOwnedByStatus = Statement sql encodeStatus (D.rowVector d) True
     where
-        sql = "select (txId, vout, pubKey, privKey, txData) from transaction, ownedKeys where keysTxId = txId"
+        sql = "select (tx_id, vout, pub_key, priv_key, tx_data) from transaction, owned_keys where keys_tx_id = tx_id"
         nonNullableColumn = D.column . D.nonNullable
         d = (,,,,,) 
             <$> rowHash
@@ -178,5 +187,5 @@ selectOwnedByStatus = Statement sql encodeStatus (D.rowVector d) True
 updateBlockRef :: Statement (BlockReference , Vector TXID) Int64
 updateBlockRef = Statement sql e D.rowsAffected True
     where
-        sql = "update transaction set txBlockId = $1 from unnest($2) as t(num) where t.num = txId"
+        sql = "update transaction set tx_block_id = $1 from unnest($2) as t(num) where t.num = tx_id"
         e = contrazip2 encodeHash (vector $ contramap coerce E.bytea)

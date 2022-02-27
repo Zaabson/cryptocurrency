@@ -1,29 +1,29 @@
 
 -- create DATABASE wallet_db
 
-create type transactionStatus as enum ('validated', 'waiting', 'discarded');
+create type transaction_status as enum ('validated', 'waiting', 'discarded');
 
 -- transaction is not a reserved keyword in postgreSQL, it is in standard SQL
 -- Same table stores both coinbase and normal transactions. txIsCoinbase differentiates.
 create table transaction (
-    txId bytea primary key,
+    tx_id bytea primary key,
     -- txBlockId null if tx wasn't yet included in block
-    txBlockId bytea null,
-    txData jsonb not null,
-    txStatus transactionStatus not null,
-    txIsCoinbase boolean not null,
-    check (txBlockId is not null or txStatus != 'validated')
+    tx_block_id bytea null,
+    tx_data jsonb not null,
+    tx_status transaction_status not null,
+    tx_is_coinbase boolean not null,
+    check (tx_block_id is not null or tx_status != 'validated')
 );
 
-create table fixedHeader (
-    blockid bytea primary key,
-    headerData jsonb not null
+create table fixed_header (
+    block_id bytea primary key,
+    header_data jsonb not null
 );
 
-create table ownedKeys (
-    keysTxId bytea not null references transaction,
+create table owned_keys (
+    keys_tx_id bytea not null references transaction,
     vout integer not null,
-    pubKey bytea not null,
-    privKey bytea not null,
-    primary key (keysTxId, vout)
+    pub_key bytea not null,
+    priv_key bytea not null,
+    primary key (keys_tx_id, vout)
 )

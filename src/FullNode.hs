@@ -10,13 +10,13 @@
 module FullNode where
 import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, answerBlockchainQuery, MsgHandler (MsgHandler), answerPing, receiveTransaction, TransactionQueue (TransactionQueue), toServerHandler)
 import Hashing (TargetHash, shash256, difficultyToTargetHash)
-import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader))
+import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader, coinbaseTransaction))
 import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs, newfixed2UTXOPoolUpdate)
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
-import BlockValidation (UTXOPool (UTXOPool), validTransaction)
+import BlockValidation (UTXOPool (UTXOPool), validTransaction, UTXO (UTXO))
 import qualified Data.Sequence as Seq
 import Node (PeersSet, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys, HasDB (executeDBEither), acquire)
-import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys))
+import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys), OwnedUTXO (OwnedUTXO))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
@@ -40,9 +40,10 @@ import Configs (PoolSettings, LoggingMode)
 import Hasql.Pool (Pool)
 import qualified Hasql.Pool as Pool
 import Hasql.Session (Session)
-import Wallet.Session as Wallet (insertOwnedUTXO)
+import Wallet.Session as Wallet (insertOwnedUTXO, insertTransaction)
 import Text.Pretty.Simple (pShow)
 import Data.Text.Lazy (unpack)
+import Wallet.Type (StoredTransaction(StoredTransaction), Status (Waiting))
 
 
 data Config = Config {
@@ -166,7 +167,7 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
             keys <- generateKeys
 
             -- mine a block
-            let (ownedUTXO, block) = mineBlock targetHash keys timestamp txs height lastblockRef
+            let (ownedUTXO@(OwnedUTXO (UTXO txid _ _) _), block) = mineBlock targetHash keys timestamp txs height lastblockRef
 
             -- log "Start mining."
 
@@ -175,7 +176,12 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
 
             -- collect utxo in wallet:
             log "We mined a coin!"
-            dbHandle (Wallet.insertOwnedUTXO ownedUTXO) >>= either (log . unpack . pShow) return
+            let storedTx = StoredTransaction txid (Just $ blockRef block) (Left $ coinbaseTransaction block) Waiting
+            dbres <- dbHandle $ do
+                Wallet.insertTransaction storedTx
+                Wallet.insertOwnedUTXO ownedUTXO
+    
+            either (log . ("mine: Wallet db error:\n" <>) . unpack . pShow) return dbres
 
             -- Put the newly mined block into blockchain.
             -- Broadcast the block to others.
