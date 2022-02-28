@@ -19,11 +19,16 @@ import Control.DeepSeq ( NFData )
 newtype TargetHash = TargetHash RawHash
 
 -- Gives TargetHash for a number in range.
--- difficulty ∈ [0, 32] where 0 is impossible and 32 is trivial difficulty, changing linearly.
+-- Scale between 0 and 20.
+-- 0 is hard, 10 is block per 20s, 20 is few blocks a sec
+
 difficultyToTargetHash :: Int -> TargetHash
 -- difficultyToTargetHash n = TargetHash . RawHash . B.pack $ (replicate n 0 <> replicate (32 - n) 255)
-difficultyToTargetHash n = TargetHash . RawHash . int2bytes $ min (((maxN + 1) `div` 32) * k) maxN
-    where k = max 0 (min maxN (toInteger n))
+-- difficultyToTargetHash n = TargetHash . RawHash . int2bytes $ min (((maxN + 1) `div` 32) * k) maxN
+--     where k = max 0 (min maxN (toInteger n))
+difficultyToTargetHash n = TargetHash . RawHash . int2bytes $ max 0 ( min (2 ^ k) maxN )
+    where
+        k =min 245 (max (n + 225) 225)
 
 maxN :: Integer
 maxN = 256^32-1
