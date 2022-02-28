@@ -19,9 +19,24 @@ import Control.DeepSeq ( NFData )
 newtype TargetHash = TargetHash RawHash
 
 -- Gives TargetHash for a number in range.
--- difficulty ∈ [0, 32*4] where 128 is impossible and 0 is trivial difficulty.
+-- difficulty ∈ [0, 32] where 0 is impossible and 32 is trivial difficulty, changing linearly.
 difficultyToTargetHash :: Int -> TargetHash
-difficultyToTargetHash n = TargetHash . RawHash . B.pack $ replicate (n `div` 4)  0 ++ [fromIntegral $ (n `mod` 4) * 64] ++ replicate (32-(n `div` 4) - 1) 255 
+-- difficultyToTargetHash n = TargetHash . RawHash . B.pack $ (replicate n 0 <> replicate (32 - n) 255)
+difficultyToTargetHash n = TargetHash . RawHash . int2bytes $ min (((maxN + 1) `div` 32) * k) maxN
+    where k = max 0 (min maxN (toInteger n))
+
+maxN :: Integer
+maxN = 256^32-1
+
+int2bytes :: Integer -> B.ByteString
+int2bytes n = B.pack $ reverse $ take 32 (unfold n)
+    where
+        unfold n =
+            let (d, m) = n `divMod` 256
+                in fromInteger m : unfold d
+
+bytes2int :: B.ByteString  -> Integer
+bytes2int = B.foldl' (\n c -> n*256 + toInteger c) 0
 
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)
@@ -34,14 +49,14 @@ instance NFData (HashOf a)
 instance Show (HashOf a) where
     show (Hash bytes) = "Hash " ++ UTF8.toString (B.take 4 bytes) ++ "..."
 
-instance Eq (HashOf a) where 
+instance Eq (HashOf a) where
     (Hash b) == (Hash c) = b == c
 instance Ord (HashOf a) where
     compare (Hash b) (Hash s) = compare b s
 
 
 -- JSON serialization achieved by converting hash ByteString to Integer
-instance ToJSON (HashOf a) where 
+instance ToJSON (HashOf a) where
     toJSON (Hash b) = toJSON $ bs2i b
 instance FromJSON (HashOf a) where
     parseJSON v = Hash . i2bs_unsized <$> parseJSON v
