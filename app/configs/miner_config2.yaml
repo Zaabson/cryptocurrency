@@ -1,0 +1,19 @@
+walletDatabaseConfig:
+  connectionSettings:
+    dbhost: localhost
+    dbport: 5432
+    dbuser: postgres
+    database: 'wallet_db'
+    dbpassword: ''
+  timeout: 30
+  poolSize: 4
+targetDifficulty: 12
+forkMaxDiff: 10
+peersFilepath: app/data/peers_miner2.json
+loggingMode:
+  contents: miner-logs2
+  tag: ToFile
+port: '49002'
+blockchainFilepath: app/data/fixed_blocks2.json
+blockchainGenesis: Złoty
+minerWaitForTxs: false
