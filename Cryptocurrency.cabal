@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2e16a8ca24b8da6df8a8029bbb03d16bb73092ea2f0b9c519cf7967af6b5e8c9
+-- hash: 2953d1f4e08ffe7b60f19a55029cdeb17a7046ca7c4fc67fd1d397a2c1e6f6e0
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -25,6 +25,7 @@ library
       Merkle
       MessageHandlers
       MessageType
+      Monitor
       Node
       Server
       Wallet.Cli
