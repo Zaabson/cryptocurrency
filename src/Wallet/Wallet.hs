@@ -9,7 +9,7 @@ module Wallet.Wallet where
 import Hashing (TargetHash, difficultyToTargetHash, shash256)
 import BlockChain (ForkMaxDiff, LivelyBlocks, FutureBlocks, Lively (Lively), Future (Future), Fixed (Fixed))
 import Network.Socket (ServiceName, Socket)
-import Node (withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys, broadcastAndUpdatePeers, HasDB (executeDBEither), executeDB, onErrorLogAndNothing, onErrorLogAndQuit, acquire)
+import Node (withLogging, AppendFixed (appendFixed), PeersSet, Status, generateKeys, broadcastAndUpdatePeers, HasDB (executeDBEither), executeDB, onErrorLogAndNothing, onErrorLogAndQuit, acquire, topLevelErrorLog)
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON (parseJSON), eitherDecodeFileStrict, encodeFile, Value, decode)
 import Server (Address(Address), server)
@@ -161,7 +161,7 @@ replHandler appState usePool (GetStatus txid) = do
 
 runWallet :: WalletConfig  -> IO ()
 runWallet config =
-    withLogging (loggingMode $ nodeConfig config) $ \log ->
+    withLogging (loggingMode $ nodeConfig config) $ \log -> topLevelErrorLog "wallet: quits." log $
         withLoadSave (peersFilepath $ nodeConfig config) $ \case
             Left e -> log e >> exitFailure
             Right peers ->

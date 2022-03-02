@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- {-# LANGUAGE NamedFieldPuns #-}
 -- {-# LANGUAGE RecordWildCards, DeriveGeneric, NamedFieldPuns, LambdaCase, ScopedTypeVariables #-}
 module FullNode where
@@ -15,7 +16,7 @@ import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, ro
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
 import BlockValidation (UTXOPool (UTXOPool), validTransaction, UTXO (UTXO))
 import qualified Data.Sequence as Seq
-import Node (PeersSet, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys, HasDB (executeDBEither), acquire)
+import Node (PeersSet, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys, HasDB (executeDBEither), acquire, topLevelErrorLog)
 import BlockCreation (SimpleWallet, blockRef, mineBlock, Keys (Keys), OwnedUTXO (OwnedUTXO))
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStrict', encodeFile)
 import Network.Socket (ServiceName)
@@ -32,7 +33,7 @@ import Crypto.Random (newGenIO)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate, onException, bracket)
 import MessageType (Message(BlockMessage), ReceivedBlock (ReceivedBlock), Answer (BlockAnswer), ReceivedTransaction (ReceivedTransaction))
-import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
+-- import Control.Monad.Except (runExceptT, withExceptT, ExceptT (ExceptT))
 import Server (Address(Address), server)
 import InMemory (logger, HasLogging, InMemory (readMemory, writeMemory, modifyMemory, modifyMemoryIO), runAtomically, InMemoryRead (readMemoryIO))
 import System.Exit (exitFailure)
@@ -177,15 +178,15 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
             -- collect utxo in wallet:
             log "We mined a coin!"
             let storedTx = StoredTransaction txid (Just $ blockRef block) (Left $ coinbaseTransaction block) Waiting
-            case mdbHandle of 
-                Nothing -> log $ "we throw the coin " <> show txid <> "to thrash."
+            case mdbHandle of
+                Nothing -> log $ "We throw the coin " <> show txid <> "to thrash."
                 Just dbHandle -> do
                     dbres <- dbHandle $ do
                         Wallet.insertTransaction storedTx
                         Wallet.insertOwnedUTXO ownedUTXO
                     either (log . ("mine: Wallet db error:\n" <>) . unpack . pShow) return dbres
-    
-            
+
+
 
             -- Put the newly mined block into blockchain.
             -- Broadcast the block to others.
@@ -335,7 +336,7 @@ data AppStatePlus = AppStatePlus {
     getAppState :: AppState,
     getLogger   :: String -> IO (),
     getDBPool :: Maybe Pool
-}    
+}
 
 instance HasLogging AppStatePlus where
     logger = getLogger
@@ -388,16 +389,16 @@ runFullNode :: Config -> IO ()
 runFullNode config =
     -- TODO: optional cmd arg to load state from save, otherwise only loads
 
-    withLogging (loggingMode config)         $ \log    ->
-      withLoadSave (peersFilepath config)      $ \epeers ->
-        withLoadSave (blockchainFilepath config) $ \efixed ->
+    withLogging (loggingMode config)         $ \log    -> topLevelErrorLog "miner: quits" log $
+        withLoadSave (peersFilepath config)      $ \epeers ->
+            withLoadSave (blockchainFilepath config) $ \efixed ->
 
-            case liftM2 (,) epeers efixed of
-                Left err -> log err >> exitFailure
-                Right (peers, fixed) -> case walletDatabaseConfig config of 
-                    Nothing ->  main log peers fixed Nothing
-                    Just walletDbConfig -> bracket (acquire walletDbConfig) Pool.release $ \pool ->
-                            main log peers fixed (Just pool)
+                case liftM2 (,) epeers efixed of
+                    Left err -> log err >> exitFailure
+                    Right (peers, fixed) -> case walletDatabaseConfig config of
+                        Nothing ->  main log peers fixed Nothing
+                        Just walletDbConfig -> bracket (acquire walletDbConfig) Pool.release $ \pool ->
+                                main log peers fixed (Just pool)
 
     where
         targetHash = difficultyToTargetHash $ targetDifficulty config
