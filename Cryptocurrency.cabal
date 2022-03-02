@@ -3,8 +3,6 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: 2953d1f4e08ffe7b60f19a55029cdeb17a7046ca7c4fc67fd1d397a2c1e6f6e0
 
 name:           Cryptocurrency
 version:        0.0.0
@@ -18,12 +16,14 @@ library
       BlockValidation
       Client
       Configs
+      ErorsT
       FullNode
       Hashing
       InMemory
       Merkle
       MessageHandlers
       MessageType
+      Monitor
       Node
       Server
       Wallet.Cli
@@ -75,7 +75,6 @@ library
 executable miner
   main-is: miner.hs
   other-modules:
-      Demo
       Paths_Cryptocurrency
   hs-source-dirs:
       app
@@ -118,7 +117,6 @@ executable miner
 executable wallet
   main-is: wallet.hs
   other-modules:
-      Demo
       Paths_Cryptocurrency
   hs-source-dirs:
       app
