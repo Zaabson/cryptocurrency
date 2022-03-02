@@ -186,6 +186,12 @@ runWallet config =
             blockchainState <- initBlockchainState (blockchainGenesis $ blockchainConfig config) fixedLength
             let appState = AppState blockchainState log pool peers
 
+            -- print lively blocks
+            -- forkIO $ logLivelyOnChange "lively_wallet_monitor" 
+            --     (getLively blockchainState) 
+            --     (\b -> show (previousHash b, shash256 $ (Right b :: Either Genesis BlockHeader)))
+
+
             -- query for blocks after our last block
             forkIO $ lightNodeCatchUpToBlockchain forkMaxDiff1 targetHash appState
 
