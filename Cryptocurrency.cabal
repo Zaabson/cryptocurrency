@@ -16,14 +16,14 @@ library
       BlockValidation
       Client
       Configs
-      ErorsT
+      -- ErorsT
       FullNode
       Hashing
       InMemory
       Merkle
       MessageHandlers
       MessageType
-      Monitor
+      -- Monitor
       Node
       Server
       Wallet.Cli
