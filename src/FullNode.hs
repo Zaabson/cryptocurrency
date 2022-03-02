@@ -55,7 +55,7 @@ data Config = Config {
         blockchainGenesis     :: Genesis,
         minerWaitForTxs :: Bool,
         forkMaxDiff :: ForkMaxDiff,
-        walletDatabaseConfig :: PoolSettings
+        walletDatabaseConfig :: Maybe PoolSettings
     } deriving (Generic)
 
 instance ToJSON Config
@@ -117,9 +117,9 @@ mining :: ForkMaxDiff       -- constant specyfying at what difference between th
        -> AppState
        -> Bool              -- Do we wait for transaction or produce coinbase-only blocks
        -> (String -> IO ()) -- Logging function
-       -> (forall a . Session a -> IO (Either Pool.UsageError a)) -- db handle
+       -> (forall a . Maybe (Session a -> IO (Either Pool.UsageError a))) -- db handle
        -> IO ()
-mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, peers} waitForTxs log dbHandle = forever $ do
+mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, peers} waitForTxs log mdbHandle = forever $ do
 
     (lastblockRef, height)  <- atomically getLastBlockReference
 
@@ -177,11 +177,15 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
             -- collect utxo in wallet:
             log "We mined a coin!"
             let storedTx = StoredTransaction txid (Just $ blockRef block) (Left $ coinbaseTransaction block) Waiting
-            dbres <- dbHandle $ do
-                Wallet.insertTransaction storedTx
-                Wallet.insertOwnedUTXO ownedUTXO
+            case mdbHandle of 
+                Nothing -> log $ "we throw the coin " <> show txid <> "to thrash."
+                Just dbHandle -> do
+                    dbres <- dbHandle $ do
+                        Wallet.insertTransaction storedTx
+                        Wallet.insertOwnedUTXO ownedUTXO
+                    either (log . ("mine: Wallet db error:\n" <>) . unpack . pShow) return dbres
     
-            either (log . ("mine: Wallet db error:\n" <>) . unpack . pShow) return dbres
+            
 
             -- Put the newly mined block into blockchain.
             -- Broadcast the block to others.
@@ -330,7 +334,7 @@ instance InMemory AppState STM TransactionQueue  where
 data AppStatePlus = AppStatePlus {
     getAppState :: AppState,
     getLogger   :: String -> IO (),
-    getDBPool :: Pool
+    getDBPool :: Maybe Pool
 }    
 
 instance HasLogging AppStatePlus where
@@ -348,8 +352,8 @@ instance InMemory AppState STM BlockchainData where
 instance AppendFixed AppStatePlus STM Block where
     appendFixed appState newfixed = modifyMemory appState ( Fixed . (newfixed ++ ) . getFixedBlocks)
 
-instance HasDB AppStatePlus where 
-    executeDBEither appState = Pool.use (getDBPool appState)
+-- instance HasDB AppStatePlus where 
+    -- executeDBEither appState = Pool.use (getDBPool appState)
 
 -- MessageHandler for full node. Describes actions on every type of incoming message.
 -- 
@@ -390,8 +394,10 @@ runFullNode config =
 
             case liftM2 (,) epeers efixed of
                 Left err -> log err >> exitFailure
-                Right (peers, fixed) -> bracket (acquire $ walletDatabaseConfig config) Pool.release $ 
-                        main log peers fixed
+                Right (peers, fixed) -> case walletDatabaseConfig config of 
+                    Nothing ->  main log peers fixed Nothing
+                    Just walletDbConfig -> bracket (acquire walletDbConfig) Pool.release $ \pool ->
+                            main log peers fixed (Just pool)
 
     where
         targetHash = difficultyToTargetHash $ targetDifficulty config
@@ -412,7 +418,7 @@ runFullNode config =
 
             -- forkIO runServer
             -- forkIO mine
-            concurrently_ (mine log appSt (Pool.use pool)) (runServer log appState)
+            concurrently_ (mine log appSt (fmap Pool.use pool)) (runServer log appState)
 
             -- return ()
 
