@@ -36,3 +36,4 @@
   - Check bytestring encoding, consider encoding as text.
   - Make FixedLength a part of Lively.
   - Update Peers on receiving messages also.
+  - Remove used in block incomingTransactions
