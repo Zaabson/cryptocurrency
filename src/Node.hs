@@ -12,7 +12,7 @@ import Server
 import Control.Concurrent.STM
 import MessageType
 import Control.Concurrent.Async (forConcurrently_, forConcurrently, Async, async, wait, withAsync)
-import Control.Monad (when, void, forever, (>=>))
+import Control.Monad (when, void, forever, (>=>), filterM)
 import Data.Function (on)
 import Client (sendAndReceive)
 import BlockChain (ForkMaxDiff)
@@ -43,6 +43,8 @@ import Configs (PoolSettings (..), LoggingMode, ConnectionSettings (..), Logging
 import Hasql.Pool (Pool)
 import Hasql.Connection (settings)
 import Data.Text.Encoding (encodeUtf8)
+import qualified Data.Set as Set
+import Control.Monad.State.Strict (evalState, get)
 
 -- Collects functionality common between fullnode and wallet lightnode.
 -- 
@@ -58,7 +60,7 @@ generateKeys = do
     return $ Keys pub priv
 
 class AppendFixed appState m b where
-    appendFixed :: appState -> [b] -> m () 
+    appendFixed :: appState -> [b] -> m ()
 
 class HasDB appState where
     executeDBEither :: appState -> Session a -> IO (Either Pool.UsageError a)
@@ -253,7 +255,8 @@ catchUpToBlockchain forkMaxDiff targetHash whatsNextBlock appState = do
         Just addresses -> do
             logger appState "Queried for new blocks."
             -- interleave, so that blocks are added in order
-            interleave <$> forConcurrently addresses (keepQuerying n)
+            -- filter uniqs by inserting to a set, leave in sorted list
+            filterUniq . interleave <$> forConcurrently addresses (keepQuerying n)
 
     where
         -- TODO: refactor with broadcastWithReply 
@@ -265,6 +268,8 @@ catchUpToBlockchain forkMaxDiff targetHash whatsNextBlock appState = do
                 case manswer of
                     Just (BlockchainQueryAnswer (RequestedBlock b))  -> (b :) <$> keepQuerying (n+1) address
                     _ -> return [] ) address
+
+        filterUniq = flip evalState Set.empty . filterM (\a -> Set.member a <$> get)
 
 
 -- Load blockchain config + protocol config + node config + specific config
