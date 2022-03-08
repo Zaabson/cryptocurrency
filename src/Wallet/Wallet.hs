@@ -148,8 +148,8 @@ replHandler appState usePool (SendTransaction recipient n) = do
                 -- used up transactions seem irrelevant here? should remove them only when tx added to fixed
                 Just (OwnedUTXO (UTXO txid vout out) (Keys pub priv), _, newtx) -> do
                     -- Here only remove
-                    insertOwnedKeys txid (fromInteger vout) pub priv
                     insertTransaction $ StoredTransaction txid Nothing (Right newtx) Waiting
+                    insertOwnedKeys txid (fromInteger vout) pub priv
                     return $ Just newtx
 
 

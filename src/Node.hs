@@ -32,7 +32,7 @@ import GHC.IO.IOMode (IOMode(AppendMode))
 import System.IO (withFile, hPutStrLn, hFlush, stdin, stdout, openFile, hClose, Handle, hPutStr, stderr, BufferMode (LineBuffering), hSetBuffering)
 import Control.Concurrent.STM (newTQueue, writeTQueue)
 import Control.Concurrent.STM.TMQueue
-import Control.Exception (bracket, finally, handle, SomeException, throw)
+import Control.Exception (bracket, finally, handle, SomeException, throwIO)
 import Data.Universe.Helpers (interleave)
 import Hasql.Session (Session)
 import qualified Hasql.Pool as Pool
@@ -377,7 +377,7 @@ withLogging ToStderr action = withLoggingHdl action stderr
 topLevelErrorLog :: String -> (String -> IO ()) -> IO a -> IO a
 topLevelErrorLog quitMsg log io = logError `finally` log quitMsg
     where
-        logError = handle (\(e :: SomeException) -> log (show e) >> throw e) io
+        logError = handle (\(e :: SomeException) -> log (show e) >> throwIO e) io
 
 
 -- this type is not very usefull in general, incomingTxs and minerWallet only apply to fullnode, PeerSet is required by class constraint and blockchainState is variable.

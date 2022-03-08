@@ -105,9 +105,9 @@ createSendingTransaction ownedUTXOs keys@(Keys pub priv) recipient amount =
         (s, notEnough, []) -> Nothing
         (s, notEnough, u:us) -> 
             let change = Output {outputDenomination=s+howMuchCash u - amount, ownerPublicAddress=shash256 pub} in 
-            let tx = Transaction [] [Output {outputDenomination=amount, ownerPublicAddress=recipient}, 
+            let pretx = Transaction [] [Output {outputDenomination=amount, ownerPublicAddress=recipient}, 
                                      change] in 
-            let tx = tx {inputs=map (createSignedInputFromUTXO tx) (u:notEnough)}
+            let tx = pretx {inputs=map (createSignedInputFromUTXO pretx) (u:notEnough)}
             -- in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys : us, tx)
             in Just (OwnedUTXO (UTXO (shash256 (Right tx)) 1 change) keys, u:notEnough, tx)
 

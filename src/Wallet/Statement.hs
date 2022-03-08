@@ -175,7 +175,9 @@ selectStatus = Statement sql encodeHash (D.singleRow rowStatus) True
 selectOwnedByStatus :: Statement Status (Vector (TXID, Int32, RSA.PublicKey, RSA.PrivateKey, Aeson.Value, Bool))
 selectOwnedByStatus = Statement sql encodeStatus (D.rowVector d) True
     where
-        sql = "select (tx_id, vout, pub_key, priv_key, tx_data, tx_is_coinbase) from transaction, owned_keys where keys_tx_id = tx_id"
+        sql = "select tx_id, vout, pub_key, priv_key, tx_data, tx_is_coinbase \
+        \ from transaction, owned_keys \
+        \ where ((keys_tx_id = tx_id) and (tx_status = ($1 :: transaction_status)))"
         nonNullableColumn = D.column . D.nonNullable
         d = (,,,,,) 
             <$> rowHash
