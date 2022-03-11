@@ -99,17 +99,17 @@ class LinksToChain b where
     prevRef :: (b -> BlockReference)
     thisRef :: (b -> BlockReference)
 
-instance LinksToChain Block where 
+instance LinksToChain Block where
     prevRef = blockPreviousHash
     thisRef = shash256 . Right . blockHeader
 
-instance LinksToChain BlockHeader where 
+instance LinksToChain BlockHeader where
     prevRef = previousHash
     thisRef = shash256 . Right
 
 -- Updates utxoPool with given new fixed blocks.
 -- Pass newfixed in the order returned from updateWithBlock.
-newfixed2UTXOPoolUpdate :: [Block] -> UTXOPool -> UTXOPool 
+newfixed2UTXOPoolUpdate :: [Block] -> UTXOPool -> UTXOPool
 newfixed2UTXOPoolUpdate newfixed utxoPool = collectUTXOs utxoPool (reverse newfixed)
 
 -- If a block can be appended to a block in LivelyBlocks, 
@@ -168,12 +168,12 @@ updateWithBlockHeader :: ForkMaxDiff                   -- constant specifying wh
                 --  -> Fixed BlockHeader           -- older chain
                  -> Future BlockHeader          -- blocks that might link to blocks we haven't received yet
                  -> BlockchainUpdated BlockHeader                       -- blockchain updated with the block
-updateWithBlockHeader forkdiff@(ForkMaxDiff maxdiff) target newblock lb@(Lively {root ,forest}) ft@(Future future) = 
+updateWithBlockHeader forkdiff@(ForkMaxDiff maxdiff) target newblock lb@(Lively {root ,forest}) ft@(Future future) =
     updateWithBlockGeneric
         validateNonce
-        todo 
+        todo
         forkdiff target newblock lb ft
-    where 
+    where
         todo ts1 ts2 zipper =
             -- calculate UTXOPool in a moment in blockchain where the new block appends 
             -- let utxoPool'           = collectUTXOs utxoPool $ pathFromRoot zipper in
@@ -199,13 +199,13 @@ updateWithBlock :: ForkMaxDiff                   -- constant specifying which fo
                 --  -> FixedBlocks                   -- older chain
                  -> FutureBlocks                  -- blocks that might link to blocks we haven't received yet
                  -> BlockchainUpdated Block                       -- blockchain updated with the block
-updateWithBlock forkdiff@(ForkMaxDiff maxdiff) target utxoPool newblock lb@(Lively {root ,forest}) ft@(Future future) = 
-    updateWithBlockGeneric 
+updateWithBlock forkdiff@(ForkMaxDiff maxdiff) target utxoPool newblock lb@(Lively {root ,forest}) ft@(Future future) =
+    updateWithBlockGeneric
         (\t b -> fst $ validateBlock t utxoPool b)
-        todo 
+        todo
         forkdiff target newblock lb ft
     where
-        todo ts1 ts2 zipper = 
+        todo ts1 ts2 zipper =
             -- calculate UTXOPool in a moment in blockchain where the new block appends 
             let utxoPool'           = collectUTXOs utxoPool $ pathFromRoot zipper in
             -- validate the block
@@ -281,7 +281,7 @@ updateWithBlock1 (ForkMaxDiff maxdiff) target utxoPool newblock lb@(Lively {root
                         BlockInvalid
             (_, (_, Nothing) : _) -> error "Break on (isjust . snd) - doesn't happen"
 
-insertFuturesHeaders :: TargetHash 
+insertFuturesHeaders :: TargetHash
                 -> Map.Map BlockReference (Set.Set BlockHeader)    -- future blocks, keys are blockPreviousHash'es
                 -> BlockHeader                         -- Block to put in the root 
                 -> Tree BlockHeader                    -- Tree made of blocks from FutureBlocks Map rooted in the given block
@@ -301,7 +301,7 @@ insertFuturesHeaders target futures block = case Map.lookup (thisRef block) futu
 
 -- We take zipper focused on newly added block. Check whether there's block waiting in the futures to be appended here.
 -- If so - append it and append blocks from futures recursively. 
-insertFutures :: TargetHash 
+insertFutures :: TargetHash
                 -> Map.Map BlockReference (Set.Set Block)    -- future blocks, keys are blockPreviousHash'es
                 -> UTXOPool                      -- utxoPool up to the root block including
                 -> Block                         -- Block to put in the root 
@@ -356,6 +356,11 @@ newtype Fixed b = Fixed {getFixedBlocks :: [b]}
 data Lively b = Lively { root :: BlockReference, forest :: [Tree b]}
     deriving (Show, Generic)
 
+drawLively :: (b -> String) -> Lively b -> String
+drawLively b2str Lively {root=root, forest=forest} =
+    "root " <> show root <> ":\n"
+    <> drawMyForest (map (fmap b2str) forest)
+
 -- Set uses our shash256 hashing for ordering. HashSet can't be used because Hashable instance demands hash with salt implementation.
 newtype Future b = Future { getFutureBlocks :: Map.Map BlockReference (Set.Set b) }
     deriving (Show)
@@ -383,7 +388,7 @@ instance FromJSON (Lively Block)
 -- Searches block tree looking for a Block/Blockheader that links to a matching previousHash,
 -- returns a zipper focused on this block - the new block should be inserted here as a child.
 -- 
-linkToChain :: 
+linkToChain ::
     LinksToChain b =>
     b
     -> Tree b
