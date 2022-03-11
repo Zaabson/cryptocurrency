@@ -7,7 +7,7 @@ walletDatabaseConfig:
     dbpassword: ''
   timeout: 30
   poolSize: 4
-targetDifficulty: 12
+targetDifficulty: 11
 forkMaxDiff: 10
 peersFilepath: app/data/peers_miner1.json
 loggingMode:

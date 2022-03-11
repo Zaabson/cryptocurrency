@@ -13,7 +13,7 @@ nodeConfig:
     tag: ToStdout
   port: '49003'
 blockchainConfig:
-  targetDifficulty: 12
+  targetDifficulty: 11
   forkMaxDiff: 10
   blockchainGenesis: Złoty
 replPort: '49050'

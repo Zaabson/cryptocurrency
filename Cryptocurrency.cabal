@@ -18,6 +18,7 @@ library
       Configs
       ErorsT
       FullNode
+      Ghci_test
       Hashing
       InMemory
       Merkle
