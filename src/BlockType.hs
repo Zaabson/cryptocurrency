@@ -59,6 +59,10 @@ data Transaction = Transaction {
 instance FromJSON Transaction
 instance ToJSON Transaction
 
+-- For set of incoming transactions in miner.
+instance Ord Transaction where 
+    compare a b = compare (shash256 a) (shash256 b)
+
 -- Special transaction with outputs only in which miner spends mined coins.
 data Coinbase = Coinbase {
     blockHeight :: Integer, -- included so that coinbase transactions to the same address hash differently

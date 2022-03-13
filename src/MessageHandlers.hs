@@ -21,6 +21,7 @@ import MessageType
       ContactQuery,
       BlockchainQuery(..),
       Message(..) )
+import qualified Data.Set as Set
 
 newtype MsgHandler msg answer = MsgHandler (msg -> IO answer)
 
@@ -58,7 +59,16 @@ toServerHandler (MsgHandler handler) log _ msgbytes = do
             return $ encode answer
 
 
-newtype TransactionQueue = TransactionQueue (Seq.Seq Transaction)
+newtype TransactionQueue = TransactionQueue {
+    getTransactionQueue :: Set.Set Transaction
+}
+
+newIncomingTransaction :: TransactionQueue -> Transaction -> TransactionQueue
+newIncomingTransaction (TransactionQueue s) tx = TransactionQueue (tx `Set.insert` s)
+
+removeUsedTransactions ::  TransactionQueue -> Set.Set Transaction -> TransactionQueue
+removeUsedTransactions (TransactionQueue s) remove = TransactionQueue (Set.difference s remove)
+
 
 receiveTransaction :: (HasLogging appState, InMemoryRead appState UTXOPool, InMemory appState m TransactionQueue) =>
     appState -> MsgHandler Transaction ReceivedTransaction
@@ -70,7 +80,7 @@ receiveTransaction appState = MsgHandler $ \tx -> do
     utxoPool <- readMemoryIO appState
     if validTransaction utxoPool tx then do
         logger appState "handler: Received new transaction."
-        runAtomically $ modifyMemory appState (\(TransactionQueue seq) -> TransactionQueue $ (Seq.|>) seq tx)
+        runAtomically $ modifyMemory appState (`newIncomingTransaction` tx)
     else
         logger appState "handler: Received new transaction."
 

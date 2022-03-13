@@ -9,11 +9,11 @@
 -- {-# LANGUAGE NamedFieldPuns #-}
 -- {-# LANGUAGE RecordWildCards, DeriveGeneric, NamedFieldPuns, LambdaCase, ScopedTypeVariables #-}
 module FullNode where
-import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, answerBlockchainQuery, MsgHandler (MsgHandler), answerPing, receiveTransaction, TransactionQueue (TransactionQueue), toServerHandler)
+import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, answerBlockchainQuery, MsgHandler (MsgHandler), answerPing, receiveTransaction, TransactionQueue (TransactionQueue, getTransactionQueue), toServerHandler, removeUsedTransactions)
 import Hashing (TargetHash, shash256, difficultyToTargetHash)
 import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader, coinbaseTransaction))
 import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs, newfixed2UTXOPoolUpdate)
-import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar)
+import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar, modifyTVar')
 import BlockValidation (UTXOPool (UTXOPool), validTransaction, UTXO (UTXO))
 import qualified Data.Sequence as Seq
 import Node (PeersSet, RunningApp (RunningApp), broadcastAndUpdatePeers, makeLogger, catchUpToBlockchain, withLogging, insertPeer, Status (Active), AppendFixed (appendFixed), generateKeys, HasDB (executeDBEither), acquire, topLevelErrorLog)
@@ -22,6 +22,7 @@ import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, eitherDecodeFileStr
 import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Control.Monad (forever, join, void, liftM2, (>=>))
 import Data.Foldable (toList, foldl')
 import Control.Concurrent.Async (race_, async, concurrently_, waitBoth)
@@ -64,7 +65,7 @@ instance FromJSON Config
 
 data AppState = AppState {
     blockchainState :: BlockchainState,
-    incomingTxs  :: TVar (Seq.Seq Transaction),
+    incomingTxs  :: TVar TransactionQueue,
     peers        :: TVar PeersSet,
     minerWallet  :: TVar SimpleWallet
     }
@@ -128,17 +129,17 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
     txs <-
         if waitForTxs then
             atomically $ do
-                txs <- readTVar incomingTxs
-                if null txs then
+                TransactionQueue txs <- readTVar incomingTxs
+                if Set.null txs then
                     retry
                 else
                     return txs
         else
-            readTVarIO incomingTxs
+            getTransactionQueue <$> readTVarIO incomingTxs
 
     -- TODO: waitingForNewLastBlock returns too often, suss
     -- doMining lastblockRef height (toList txs) `race_` threadDelay 240000000 `race_` atomically (waitingForNewLastBlock lastblockRef)
-    doMining lastblockRef height (toList txs) `race_` threadDelay 240000000
+    doMining lastblockRef height txs `race_` threadDelay 240000000
 
     where
 
@@ -161,19 +162,22 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
         --     (ref, _) <- getLastBlockReference
         --     check (ref == oldRef)
 
-        doMining :: BlockReference -> Integer -> [Transaction] -> IO ()
+        -- doMining :: BlockReference -> Integer -> t Transaction -> IO ()
         doMining lastblockRef height txs = do
             timestamp <- getCurrentTime
             -- keys for coinbase money
             keys <- generateKeys
 
             -- mine a block
-            let (ownedUTXO@(OwnedUTXO (UTXO txid _ _) _), block) = mineBlock targetHash keys timestamp txs height lastblockRef
+            let (ownedUTXO@(OwnedUTXO (UTXO txid _ _) _), block) = mineBlock targetHash keys timestamp (toList txs) height lastblockRef
 
             -- log "Start mining."
 
             -- forces hash crunching
             evaluate . force $ blockHeader block
+
+            -- Remove transactions used in this block. Note that the block might not end up in the blockchain, todo.
+            atomically $ modifyTVar' incomingTxs (`removeUsedTransactions` txs)
 
             -- collect utxo in wallet:
             log "We mined a coin!"
@@ -327,9 +331,9 @@ instance InMemory AppState STM PeersSet  where
     modifyMemory = modifyMemory . peers
 
 instance InMemory AppState STM TransactionQueue  where
-    readMemory = (TransactionQueue <$>) . readMemory . incomingTxs
-    writeMemory appState (TransactionQueue seq) =  writeMemory (incomingTxs appState) seq
-    modifyMemory appState f = modifyMemory (incomingTxs appState) ( (\(TransactionQueue seq) -> seq) . f . TransactionQueue)
+    readMemory = readMemory . incomingTxs
+    writeMemory appState txq =  writeMemory (incomingTxs appState) txq
+    modifyMemory appState f = modifyMemory (incomingTxs appState) f
 
 
 data AppStatePlus = AppStatePlus {
@@ -438,7 +442,7 @@ runFullNode config =
         initAppState :: BlockchainState -> TVar PeersSet -> IO AppState
         initAppState blockchainState peers =
             AppState blockchainState
-                <$> newTVarIO Seq.empty
+                <$> newTVarIO (TransactionQueue Set.empty)
                 <*> return peers
                 <*> newTVarIO []
 
