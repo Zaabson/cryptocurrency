@@ -25,7 +25,7 @@ import Data.Text (pack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 data Keys = Keys RSA.PublicKey RSA.PrivateKey
-    deriving (Generic)
+    deriving (Generic, Eq, Show)
 
 newtype ByteStringJSON = ByteStringJSON {getByteStringBack :: B.ByteString }
 
@@ -39,15 +39,16 @@ instance FromJSON ByteStringJSON where
 
 instance ToJSON Keys where
     toJSON (Keys pub priv) = object
-        ["public_key" .= ByteStringJSON (LazyB.toStrict $ Bin.encode pub), "private_key" .= ByteStringJSON (LazyB.toStrict $ Bin.encode priv) ]
+        ["public_key1" .= ByteStringJSON (LazyB.toStrict $ Bin.encode pub),
+        "private_key1" .= ByteStringJSON (LazyB.toStrict $ Bin.encode priv) ]
 
 instance FromJSON Keys where
     parseJSON = withObject "Keys" $ \o -> 
-        Keys <$> ( Bin.decode . LazyB.fromStrict . getByteStringBack <$> o .: "public_key")
-             <*> ( Bin.decode . LazyB.fromStrict . getByteStringBack <$> o .: "private_key")
+        Keys <$> ( Bin.decode . LazyB.fromStrict . getByteStringBack <$> o .: "public_key1")
+             <*> ( Bin.decode . LazyB.fromStrict . getByteStringBack <$> o .: "private_key1")
 
 data OwnedUTXO = OwnedUTXO UTXO Keys
-    deriving (Generic)
+    deriving (Generic, Eq)
 
 instance ToJSON OwnedUTXO
 instance FromJSON OwnedUTXO 
