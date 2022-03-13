@@ -15,6 +15,8 @@ import qualified Data.ByteString.Lazy as B
 import Hashing (HashOf(getHash), shash256)
 import Data.Int
 
+import Test.QuickCheck.Instances.ByteString ()
+
 prop_bytestringToInt64 :: Int64 -> Bool
 prop_bytestringToInt64 x = x == byteStringToInt64 (int64ToByteString x)
 
@@ -27,4 +29,9 @@ main = do
     quickCheckWith (stdArgs {maxSize = 30}) (prop_pruneTrees 2)
     quickCheckWith (stdArgs {maxSize = 30}) (prop_pruneTrees 5)
     quickCheckWith (stdArgs {maxSize = 30}) (prop_pruneTrees 0)
+    -- quickCheck prop_ByteStringToJSONFromJSON
+    -- quickCheck prop_KeysToJSONFromJSON
     quickCheckWith (stdArgs {maxSize = 10}) prop_UTXOPoolCorrect
+    quickCheckWith (stdArgs {maxSize = 10}) prop_BlockchainToJSONFromJSON
+    quickCheckWith (stdArgs {maxSize = 10}) prop_TransactionsToJSONFromJSON
+    

@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module BlocksValidationTest where
 
 import BlockType
@@ -6,7 +7,9 @@ import Test.QuickCheck
 import qualified Data.Map as Map
 import BlockValidation (UTXOPool(..), validateBlockTransactions,UTXO (UTXO))
 import Data.List (foldl')
-import BlockCreation (OwnedUTXO(OwnedUTXO))
+import BlockCreation (OwnedUTXO(OwnedUTXO), ByteStringJSON (ByteStringJSON), Keys)
+import qualified Data.Aeson as Aeson
+import Data.ByteString (ByteString)
 
 
 foldBlockTransactions :: [Block] -> Maybe UTXOPool
@@ -30,3 +33,28 @@ prop_UTXOPoolCorrect (BlockchainWithState utxos blocks genesis) =
             && Map.size utxoPool == length utxos
         Nothing -> False
 
+
+prop_BlockchainToJSONFromJSON :: BlockchainWithState -> Bool
+prop_BlockchainToJSONFromJSON (BlockchainWithState utxos blocks genesis) =
+       (Aeson.decode' . Aeson.encode) utxos == Just utxos
+    && (Aeson.decode' . Aeson.encode) blocks == Just blocks
+    && (Aeson.decode' . Aeson.encode) genesis == Just genesis
+
+prop_TransactionsToJSONFromJSON :: BlockchainWithState -> Bool
+prop_TransactionsToJSONFromJSON (BlockchainWithState utxos blocks genesis) =
+    let txs = concatMap transactions blocks
+    in all 
+        (\tx -> (Aeson.decode' . Aeson.encode) tx == Just tx)
+        txs
+
+
+-- prop_ByteStringToJSONFromJSON :: ByteString -> Bool
+-- prop_ByteStringToJSONFromJSON b =
+--        let (mb :: Maybe ByteStringJSON) = (Aeson.decode' . Aeson.encode) (ByteStringJSON b)
+--        in case mb of 
+--            Nothing -> False
+--            Just (ByteStringJSON b') -> b == b'
+
+-- prop_KeysToJSONFromJSON :: Keys -> Bool
+-- prop_KeysToJSONFromJSON keys = 
+--     (Aeson.decode' . Aeson.encode) keys == Just keys
