@@ -79,10 +79,10 @@ receiveTransaction appState = MsgHandler $ \tx -> do
 
     utxoPool <- readMemoryIO appState
     if validTransaction utxoPool tx then do
-        logger appState "handler: Received new transaction."
+        logger appState "handler: Received new valid transaction."
         runAtomically $ modifyMemory appState (`newIncomingTransaction` tx)
     else
-        logger appState "handler: Received new transaction."
+        logger appState "handler: Received new invalid transaction."
 
     return ReceivedTransaction
 
