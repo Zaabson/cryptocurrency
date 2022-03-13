@@ -113,20 +113,21 @@ withLoadSave fp = bracket
     (either (const $ return ()) (atomically . readTVar >=> encodeFile fp))
 
 -- Execute user's wallet command provided with a handle to db pool that logs the error and projects to Nothing.
-replHandler :: InMemory appState m PeersSet => appState -> (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r
+replHandler :: (InMemory appState m PeersSet, HasLogging appState) => 
+    appState -> (forall a . Session a -> IO (Maybe a)) -> CommandR r-> IO r
 -- replHandler :: appState -> CommandR r-> IO r
 replHandler appState usePool (AddCoin (OwnedUTXO (UTXO txid vout _) (Keys pub priv))) = do 
     -- we discard Output information from OwnedUTXO 
     m <- usePool $ insertOwnedKeys txid (fromInteger vout) pub priv
     case m of 
-        Nothing -> return AddCoinFail
-        Just () -> return AddCoinSuccess 
+        Nothing -> logger appState "repl: Added coin." >>return AddCoinFail
+        Just () -> logger appState "repl: Couldn't add coin. Fails." >> return AddCoinSuccess 
 
 replHandler appState usePool (AddTransaction tx blockref) = do 
     m <- usePool $ insertTransaction (StoredTransaction (shash256 tx) blockref tx Waiting)
     case m of 
-        Nothing -> return AddTransactionSuccess 
-        Just () -> return AddTransactionFail
+        Nothing -> logger appState "repl: Added transaction." >> return AddTransactionSuccess 
+        Just () -> logger appState "repl: Couldn't add transaction. Fails." >> return AddTransactionFail
 
 replHandler appState usePool (SendTransaction recipient n) = do 
     newkeys <- generateKeys
@@ -137,6 +138,7 @@ replHandler appState usePool (SendTransaction recipient n) = do
         Just Nothing -> return NotEnoughFunds 
         Just (Just newtx) -> do
             forkIO $ broadcastAndUpdatePeers appState (TransactionMessage newtx) (TransactionAnswer ReceivedTransaction)   -- broadcast transaction
+            logger appState "repl: Created and sended transaction."
             return SendedTransaction
 
     where 
@@ -157,7 +159,7 @@ replHandler appState usePool (GetStatus txid) = do
     ms <- usePool $ selectStatus txid
     case ms of 
         Nothing -> return GetStatusFailure
-        Just status -> return (StatusIs txid status)
+        Just status -> logger appState "repl: Returned queried transaction status." >> return (StatusIs txid status)
 
 runWallet :: WalletConfig  -> IO ()
 runWallet config =
