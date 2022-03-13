@@ -7,13 +7,13 @@ import Hashing ( shash256, TargetHash, HashOf )
 import BlockType
     ( blockBlockHeight,
       blockPreviousHash,
-      Block(Block, transactions, blockHeader),
+      Block(Block, transactions, blockHeader, coinbaseTransaction),
       BlockHeader(previousHash),
       BlockReference )
 import Data.Aeson (ToJSON, FromJSON)
 import GHC.Generics (Generic)
 import Data.Functor ( (<&>) )
-import BlockValidation (UTXOPool (UTXOPool), UTXO(..), txGetNewUTXOs, validateBlock, validateNonce)
+import BlockValidation (UTXOPool (UTXOPool), UTXO(..), txGetNewUTXOs, validateBlock, validateNonce, coinbaseGetNewUTXOs)
 import qualified Data.Map as Map
 import BlockCreation (blockRef)
 import Data.Maybe (fromJust, isJust, maybe)
@@ -336,9 +336,11 @@ collectUTXOs = foldl' insert2map
     -- size(pool) = n, size(block) = m
     -- does m insertions working in O(mlogn)
     insert2map :: UTXOPool -> Block -> UTXOPool
-    insert2map (UTXOPool pool) (Block {transactions=txs}) = UTXOPool $
-        foldl' (\pl (UTXO txid vout out) -> Map.insert (txid, vout) out pl) pool
-                (concatMap txGetNewUTXOs txs)
+    insert2map (UTXOPool pool) (Block {transactions=txs, coinbaseTransaction=coinbaseTransaction}) = UTXOPool $
+        foldl'
+            (\pl (UTXO txid vout out) -> Map.insert (txid, vout) out pl)
+            pool
+            (coinbaseGetNewUTXOs coinbaseTransaction <> concatMap txGetNewUTXOs txs)
 
 
 -- Invariant:

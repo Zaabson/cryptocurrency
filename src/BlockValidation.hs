@@ -31,6 +31,7 @@ instance Eq UTXO where
     (UTXO txid1 vout1 _) == (UTXO txid2 vout2 _) = (txid1 == txid2) && (vout1 == vout2)
 
 newtype UTXOPool = UTXOPool (Map.Map (TXID, Integer) Output)
+    deriving (Show)
 
 searchPool :: UTXOPool -> [Input] -> [Maybe Output]
 searchPool (UTXOPool pool) = map (\i -> Map.lookup (utxoReference i, vout i) pool)
@@ -130,15 +131,19 @@ validateBlockTransactions (UTXOPool pool) Block{transactions=txs, coinbaseTransa
                     put pool2
                     (bool &&) <$> validate rest
 
-coinbaseGetNewUTXOs :: Coinbase -> [UTXO]
-coinbaseGetNewUTXOs tx = 
-    let hash = shash256 $ Left tx in
-    tx |> coinbaseOutputs |> zip [0..] |> map (\case (n, o) -> UTXO hash n o)
-
 txGetNewUTXOs :: Transaction -> [UTXO]
 txGetNewUTXOs tx =
     let hash = shash256 $ Right tx in
-    tx |> outputs |> zip [0..] |> map (\case (n, o) -> UTXO hash n o)
+    outputsToUTXOs hash (outputs tx)
+
+coinbaseGetNewUTXOs :: Coinbase -> [UTXO]
+coinbaseGetNewUTXOs coinbase = 
+    let hash = shash256 $ Left coinbase in
+    outputsToUTXOs hash (coinbaseOutputs coinbase)
+
+outputsToUTXOs :: TXID -> [Output] -> [UTXO]
+outputsToUTXOs txid outs = 
+    outs |> zip [0..] |> map (\case (n, o) -> UTXO txid n o)
 
 blocksPerHalving :: Integer
 blocksPerHalving = 100000
