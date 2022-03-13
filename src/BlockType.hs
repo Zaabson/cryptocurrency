@@ -26,7 +26,7 @@ type TXID = HashOf (Either Coinbase Transaction)
 type PublicAddress = HashOf RSA.PublicKey
 
 -- Transactions are signed by input owners. Thats the signature.
-newtype Signature = Signature B.ByteString deriving (Show, Generic)
+newtype Signature = Signature B.ByteString deriving (Show, Generic, Eq)
 
 -- Serialization achieved by converting ByteString to Integer
 instance ToJSON Signature where 
@@ -55,7 +55,7 @@ lazy_i2bs_unsized i = LazyB.reverse $ LazyB.unfoldr (\i' -> if i' <= 0 then Noth
 data Transaction = Transaction {
         inputs :: [Input],
         outputs :: [Output]
-    } deriving (Show, Generic)
+    } deriving (Show, Generic, Eq)
 
 instance FromJSON Transaction
 instance ToJSON Transaction
@@ -72,7 +72,7 @@ instance ToJSON Coinbase
 data Output = Output {
     outputDenomination :: Cent,
     ownerPublicAddress :: PublicAddress -- specifies who's money it is now
-    } deriving (Show, Generic)
+    } deriving (Show, Generic, Eq)
 
 instance FromJSON Output
 instance ToJSON Output
@@ -86,13 +86,13 @@ data Input = Input {
     signerPublicKey :: RSA.PublicKey, 
     utxoReference :: TXID,  -- reference to UTXO (unspend transaction output)
     vout :: Integer         -- output index in a transaction outputs, reference to UTXO
-    } deriving (Show, Generic)
+    } deriving (Show, Generic, Eq)
 
 instance FromJSON Input
 instance ToJSON Input
 
 -- First Block in the chain, consists of label only.
-newtype Genesis = Genesis String deriving (Show, ToJSON, FromJSON)
+newtype Genesis = Genesis String deriving (Show, ToJSON, FromJSON, Eq)
 -- instance FromJSON Genesis
 -- instance ToJSON Input
 
