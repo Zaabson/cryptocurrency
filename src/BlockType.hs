@@ -12,7 +12,13 @@ import Data.Time.Clock (UTCTime)
 import Crypto.Util (bs2i, i2bs_unsized)
 import qualified Codec.Crypto.RSA as RSA -- Using RSA instead of elliptic curves because the library was better documented
 -- Using RSA instead of elliptic curves because the library was better documented
-import Hashing (HashOf, RawHash, shash256)
+-- Using RSA instead of elliptic curves because the library was better documented
+-- Using RSA instead of elliptic curves because the library was better documented
+-- Using RSA instead of elliptic curves because the library was better documented
+-- Using RSA instead of elliptic curves because the library was better documented
+-- Using RSA instead of elliptic curves because the library was better documented
+-- Using RSA instead of elliptic curves because the library was better documented
+import Hashing (HashOf, RawHash, shash256, ByteStringJSON (ByteStringJSON, getByteStringBack))
 import Control.DeepSeq
 
 -- Indivisible unit of our currency.
@@ -30,24 +36,17 @@ newtype Signature = Signature B.ByteString deriving (Show, Generic, Eq)
 
 -- Serialization achieved by converting ByteString to Integer
 instance ToJSON Signature where 
-    toJSON (Signature b) = toJSON $ bs2i b
+    toJSON (Signature b) = toJSON $ ByteStringJSON b
 instance FromJSON Signature where 
-    parseJSON v = Signature . i2bs_unsized <$> parseJSON v
+    parseJSON v = Signature . getByteStringBack <$> parseJSON v
 
 
 -- Serialization achieved by converting PublicKey to ByteString (using Binary) and then to Integer
 instance ToJSON RSA.PublicKey where 
-    toJSON = toJSON . lazy_bs2i . Binary.encode
+    toJSON = toJSON . ByteStringJSON . LazyB.toStrict . Binary.encode
 
 instance FromJSON RSA.PublicKey where
-    parseJSON v = Binary.decode . lazy_i2bs_unsized <$> parseJSON v
-
--- from "crypto-api" Crypto.Util
-lazy_bs2i :: LazyB.ByteString -> Integer
-lazy_bs2i = LazyB.foldl' (\i b -> (i `shiftL` 8) + fromIntegral b) 0
-lazy_i2bs_unsized :: Integer -> LazyB.ByteString
-lazy_i2bs_unsized 0 = LazyB.singleton 0
-lazy_i2bs_unsized i = LazyB.reverse $ LazyB.unfoldr (\i' -> if i' <= 0 then Nothing else Just (fromIntegral i', i' `shiftR` 8)) i
+    parseJSON v = Binary.decode . LazyB.fromStrict . getByteStringBack <$> parseJSON v
 
 -- Transaction consists of:
 -- - Inputs - where the money comes from, references to previous outputs

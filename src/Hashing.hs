@@ -5,11 +5,13 @@ module Hashing where
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UTF8
-import Data.Aeson (FromJSON(parseJSON), ToJSON(toJSON) )
+import Data.Aeson (FromJSON(parseJSON), ToJSON(toJSON), withText )
 import qualified Data.Aeson as Aeson
 import GHC.Generics ( Generic )
 import Crypto.Util (bs2i, i2bs_unsized)
 import Control.DeepSeq ( NFData )
+import qualified Data.ByteString.Base64 as B64
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 -- import qualified Data.Aeson.Key as Aeson
 
 -- TODO: target hash based on average mining speed 
@@ -43,6 +45,15 @@ int2bytes n = B.pack $ reverse $ take 32 (unfold n)
 bytes2int :: B.ByteString  -> Integer
 bytes2int = B.foldl' (\n c -> n*256 + toInteger c) 0
 
+newtype ByteStringJSON = ByteStringJSON {getByteStringBack :: B.ByteString }
+
+instance ToJSON ByteStringJSON where
+    toJSON = toJSON . decodeUtf8 . B64.encode . getByteStringBack 
+
+instance FromJSON ByteStringJSON where
+    parseJSON = withText "ByteString" $
+        either fail (return . ByteStringJSON) . B64.decode . encodeUtf8
+
 -- NOTE : it's better to keep strict Bytestrings as
 --        fromStrict is O(1) and toStrict is O(n)
 
@@ -62,9 +73,9 @@ instance Ord (HashOf a) where
 
 -- JSON serialization achieved by converting hash ByteString to Integer
 instance ToJSON (HashOf a) where
-    toJSON (Hash b) = toJSON $ bs2i b
+    toJSON (Hash b) = toJSON $ ByteStringJSON b
 instance FromJSON (HashOf a) where
-    parseJSON v = Hash . i2bs_unsized <$> parseJSON v
+    parseJSON v = Hash . getByteStringBack <$> parseJSON v
 
 -- serializes to ByteString using JSON serialization, calculates sha256 hash
 -- Hashable == ToJSON
@@ -80,10 +91,10 @@ instance Show RawHash where
     show (RawHash bytes) = "RawHash " ++ UTF8.toString (B.take 4 bytes) ++ "..."
 
 instance ToJSON RawHash where
-    toJSON (RawHash b) = toJSON $ bs2i b
+    toJSON (RawHash b) = toJSON $ ByteStringJSON b
 
 instance FromJSON RawHash where
-    parseJSON v = RawHash . i2bs_unsized <$> parseJSON v
+    parseJSON v = RawHash . getByteStringBack <$> parseJSON v
 
 shashBytes :: B.ByteString -> B.ByteString
 shashBytes = SHA256.hash

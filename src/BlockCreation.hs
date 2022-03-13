@@ -3,7 +3,7 @@
 module BlockCreation where
 
 import Merkle
-import Hashing (RawHash (RawHash), HashOf(..), shash256, toRawHash, TargetHash(TargetHash))
+import Hashing (RawHash (RawHash), HashOf(..), shash256, toRawHash, TargetHash(TargetHash), ByteStringJSON (ByteStringJSON, getByteStringBack))
 import qualified Data.ByteString.Lazy as LazyB
 import qualified Data.ByteString as B
 import Data.Time (UTCTime, getCurrentTime)
@@ -20,22 +20,10 @@ import BlockValidation (calculateBlockReward, createSignedInput, UTXO(..), txGet
 import GHC.Generics (Generic)
 import Data.Aeson ( FromJSON (parseJSON), ToJSON (toJSON), object, (.=), withObject, (.:), withText )
 import qualified Data.Binary as Bin
-import qualified Data.ByteString.Base64 as B64
 import Data.Text (pack)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 data Keys = Keys RSA.PublicKey RSA.PrivateKey
     deriving (Generic, Eq, Show)
-
-newtype ByteStringJSON = ByteStringJSON {getByteStringBack :: B.ByteString }
-
-instance ToJSON ByteStringJSON where
-    toJSON = toJSON . decodeUtf8 . B64.encode . getByteStringBack 
-
-instance FromJSON ByteStringJSON where
-    parseJSON = withText "ByteString" $
-        either fail (return . ByteStringJSON) . B64.decode . encodeUtf8
-
 
 instance ToJSON Keys where
     toJSON (Keys pub priv) = object
