@@ -155,7 +155,7 @@ server servAddr logger handler = withSocketsDo $ do
     procRequest :: (String -> IO ()) -> Socket -> IO ThreadId
     procRequest log mastersock =
         do  (connsock, clientaddr) <- accept mastersock  -- gets us new socket
-            log "server: Client connected."
+            -- log "server: Client connected."
             procConnection log connsock clientaddr 
                 `forkFinally`
                 const (gracefulClose connsock timeOutToRecvTCP_FIN)
@@ -167,11 +167,13 @@ server servAddr logger handler = withSocketsDo $ do
             case mmsg of
                 Nothing -> 
                     log "server: No valid message read. disconnected."
-                Just msg -> 
-                    finally 
-                        (do answer <- handler clientaddr msg
-                            NSB.sendAll connsock $ appendLenBits answer)
-                        (log "server: Client disconnected.")         
+                Just msg -> do 
+                        answer <- handler clientaddr msg
+                        NSB.sendAll connsock $ appendLenBits answer
+                    -- finally 
+                    --     (do answer <- handler clientaddr msg
+                    --         NSB.sendAll connsock $ appendLenBits answer)
+                    --     (log "server: Client disconnected.")       
 
 
 acceptSingleClient ::
