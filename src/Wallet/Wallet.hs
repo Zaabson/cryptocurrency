@@ -133,9 +133,10 @@ replHandler appState usePool (SendTransaction recipient n) = do
     newkeys <- generateKeys
     res <- usePool (db newkeys)
     case res of 
-      -- db session error
-        Nothing -> return SendTransactionFailure 
-        Just Nothing -> return NotEnoughFunds 
+        -- db session error
+        Nothing -> logger appState "repl: Couldn't create a transaction due to db error. Fails." >> return SendTransactionFailure
+        -- not enough founds
+        Just Nothing -> logger appState "repl: Couldn't create a transaction. Not enough funds. Fails." >> return NotEnoughFunds 
         Just (Just newtx) -> do
             forkIO $ broadcastAndUpdatePeers appState (TransactionMessage newtx) (TransactionAnswer ReceivedTransaction)   -- broadcast transaction
             logger appState "repl: Created and sended transaction."
