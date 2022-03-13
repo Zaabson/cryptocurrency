@@ -12,7 +12,7 @@ module FullNode where
 import MessageHandlers (combineHandlers, MessageHandler, answerContactQuery, answerBlockchainQuery, MsgHandler (MsgHandler), answerPing, receiveTransaction, TransactionQueue (TransactionQueue, getTransactionQueue), toServerHandler, removeUsedTransactions)
 import Hashing (TargetHash, shash256, difficultyToTargetHash)
 import BlockType (Genesis, Transaction (Transaction), BlockReference, blockBlockHeight, Block (Block, blockHeader, coinbaseTransaction))
-import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs, newfixed2UTXOPoolUpdate)
+import BlockChain (FixedBlocks, Fixed(Fixed, getFixedBlocks), Lively (Lively, root, forest), LivelyBlocks, Future (Future), FutureBlocks, BlockchainUpdated (BlockInserted, BLockInsertedLinksToRoot, FutureBlock, BlockInvalid, BlockAlreadyInserted), getLastBlock, updateWithBlock, ForkMaxDiff, collectUTXOs, newfixed2UTXOPoolUpdate, drawLively)
 import Control.Concurrent.STM (TVar, STM, atomically, readTVar, readTVarIO, retry, writeTVar, newTVarIO, newTMVarIO, newTVar, modifyTVar')
 import BlockValidation (UTXOPool (UTXOPool), validTransaction, UTXO (UTXO))
 import qualified Data.Sequence as Seq
@@ -23,7 +23,7 @@ import Network.Socket (ServiceName)
 import GHC.Generics (Generic)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import Control.Monad (forever, join, void, liftM2, (>=>))
+import Control.Monad (forever, join, void, liftM2, (>=>), when)
 import Data.Foldable (toList, foldl')
 import Control.Concurrent.Async (race_, async, concurrently_, waitBoth)
 import Control.Concurrent (threadDelay, newMVar, forkIO)
@@ -137,6 +137,10 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
         else
             getTransactionQueue <$> readTVarIO incomingTxs
 
+    forkIO $ do
+        atomically $ waitingForNewLastBlock lastblockRef
+        atomically (readLivelyBlocks blockchainState) >>= log . drawLively (show . blockRef)
+
     -- TODO: waitingForNewLastBlock returns too often, suss
     -- doMining lastblockRef height (toList txs) `race_` threadDelay 240000000 `race_` atomically (waitingForNewLastBlock lastblockRef)
     doMining lastblockRef height txs `race_` threadDelay 240000000
@@ -157,10 +161,11 @@ mining forkMaxDiff targetHash appState@AppState {blockchainState, incomingTxs, p
                         b:bs -> 1 + blockBlockHeight b)
                 Just lastblock -> return (blockRef lastblock, 1 + blockBlockHeight lastblock)
 
-        -- waitingForNewLastBlock :: BlockReference -> STM ()
-        -- waitingForNewLastBlock oldRef = do
-        --     (ref, _) <- getLastBlockReference
-        --     check (ref == oldRef)
+        waitingForNewLastBlock :: BlockReference -> STM ()
+        waitingForNewLastBlock oldRef = do
+            (ref, _) <- getLastBlockReference
+            when (oldRef == ref) retry
+
 
         -- doMining :: BlockReference -> Integer -> t Transaction -> IO ()
         doMining lastblockRef height txs = do

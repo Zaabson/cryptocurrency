@@ -83,7 +83,9 @@ receiveBlockLight :: (HasLogging appState,
     InMemory appState m PeersSet, InMemory appState m FixedLength, HasDB appState)
     => ForkMaxDiff -> TargetHash -> appState -> MsgHandler Block ReceivedBlock
 receiveBlockLight forkMaxDiff targetHash appState = MsgHandler $ \block -> do
-
+    if length (transactions block) > 0 then 
+        logger appState "RECEIVED OUR TRANSACTION INSIDE BLOCK\n"
+    else return ()
     if validateNonceAndMerkle targetHash block then do
         -- add BlockReference to transactions from this block that are in database
         forkIO $ do 

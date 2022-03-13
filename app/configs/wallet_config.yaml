@@ -10,7 +10,8 @@ databaseConfig:
 nodeConfig:
   peersFilepath: app/data/peers_wallet.json
   loggingMode:
-    tag: ToStdout
+    contents: wallet-logs1
+    tag: ToFile
   port: '49003'
 blockchainConfig:
   targetDifficulty: 11
